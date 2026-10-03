@@ -1,0 +1,139 @@
+#include "asset_cipher.hpp"
+
+#include <stddef.h>
+#include <stdint.h>
+
+namespace godot::asset_cipher {
+namespace {
+
+const uint8_t kKey[32] = {
+    0x1b, 0x9e, 0x93, 0xe6, 0xcf, 0x95, 0x87, 0xfe, 0x21, 0xba, 0xd8, 0x68, 0x12, 0x56, 0xce, 0xea,
+    0xf7, 0x04, 0x3d, 0xdb, 0x4e, 0xd7, 0x79, 0x3f, 0x0f, 0x49, 0x75, 0x8b, 0x70, 0x70, 0xb6, 0x47
+};
+
+const uint8_t kNonce[16] = {
+    0xa2, 0xe0, 0x30, 0x98, 0xc3, 0xea, 0x73, 0xaf, 0xca, 0x25, 0x56, 0xff, 0x27, 0xfa, 0x3c, 0x69
+};
+
+const uint8_t kSbox[256] = {
+    0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
+    0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
+    0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
+    0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
+    0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
+    0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
+    0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
+    0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
+    0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
+    0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
+    0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
+    0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
+    0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
+    0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
+    0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
+    0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
+};
+
+const uint8_t kRcon[11] = {
+    0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36
+};
+
+uint8_t xtime(uint8_t value) {
+    return static_cast<uint8_t>((value << 1) ^ ((value & 0x80) ? 0x1B : 0));
+}
+
+void expand_key(const uint8_t key[32], uint8_t round_keys[240]) {
+    for (int i = 0; i < 32; ++i) round_keys[i] = key[i];
+    int bytes_done = 32;
+    int rcon_index = 1;
+    uint8_t temp[4];
+    while (bytes_done < 240) {
+        for (int i = 0; i < 4; ++i) temp[i] = round_keys[bytes_done - 4 + i];
+        if (bytes_done % 32 == 0) {
+            const uint8_t first = temp[0];
+            temp[0] = temp[1];
+            temp[1] = temp[2];
+            temp[2] = temp[3];
+            temp[3] = first;
+            for (int i = 0; i < 4; ++i) temp[i] = kSbox[temp[i]];
+            temp[0] ^= kRcon[rcon_index++];
+        } else if (bytes_done % 32 == 16) {
+            for (int i = 0; i < 4; ++i) temp[i] = kSbox[temp[i]];
+        }
+        for (int i = 0; i < 4; ++i) {
+            round_keys[bytes_done] = round_keys[bytes_done - 32] ^ temp[i];
+            ++bytes_done;
+        }
+    }
+}
+
+void encrypt_block(const uint8_t round_keys[240], const uint8_t in[16], uint8_t out[16]) {
+    uint8_t state[4][4];
+    for (int column = 0; column < 4; ++column)
+        for (int row = 0; row < 4; ++row) state[column][row] = in[column * 4 + row];
+    for (int column = 0; column < 4; ++column)
+        for (int row = 0; row < 4; ++row) state[column][row] ^= round_keys[column * 4 + row];
+    for (int round = 1; round <= 14; ++round) {
+        for (int column = 0; column < 4; ++column)
+            for (int row = 0; row < 4; ++row) state[column][row] = kSbox[state[column][row]];
+        uint8_t rows[4][4];
+        for (int row = 0; row < 4; ++row)
+            for (int column = 0; column < 4; ++column) rows[row][column] = state[column][row];
+        for (int row = 1; row < 4; ++row) {
+            uint8_t rotated[4];
+            for (int column = 0; column < 4; ++column) rotated[column] = rows[row][(column + row) & 3];
+            for (int column = 0; column < 4; ++column) rows[row][column] = rotated[column];
+        }
+        for (int column = 0; column < 4; ++column)
+            for (int row = 0; row < 4; ++row) state[column][row] = rows[row][column];
+        if (round != 14) {
+            for (int column = 0; column < 4; ++column) {
+                const uint8_t a0 = state[column][0];
+                const uint8_t a1 = state[column][1];
+                const uint8_t a2 = state[column][2];
+                const uint8_t a3 = state[column][3];
+                state[column][0] = xtime(a0) ^ xtime(a1) ^ a1 ^ a2 ^ a3;
+                state[column][1] = a0 ^ xtime(a1) ^ xtime(a2) ^ a2 ^ a3;
+                state[column][2] = a0 ^ a1 ^ xtime(a2) ^ xtime(a3) ^ a3;
+                state[column][3] = xtime(a0) ^ a0 ^ a1 ^ a2 ^ xtime(a3);
+            }
+        }
+        const uint8_t *round_key = round_keys + round * 16;
+        for (int column = 0; column < 4; ++column)
+            for (int row = 0; row < 4; ++row) state[column][row] ^= round_key[column * 4 + row];
+    }
+    for (int column = 0; column < 4; ++column)
+        for (int row = 0; row < 4; ++row) out[column * 4 + row] = state[column][row];
+}
+
+void increment_counter(uint8_t counter[16]) {
+    for (int i = 15; i >= 0; --i) {
+        counter[i] = static_cast<uint8_t>(counter[i] + 1);
+        if (counter[i] != 0) break;
+    }
+}
+
+void xor_ctr(uint8_t *data, size_t size) {
+    uint8_t round_keys[240];
+    expand_key(kKey, round_keys);
+    uint8_t block[16];
+    for (int i = 0; i < 16; ++i) block[i] = kNonce[i];
+    size_t offset = 0;
+    while (offset < size) {
+        uint8_t keystream[16];
+        encrypt_block(round_keys, block, keystream);
+        const size_t count = (size - offset < 16) ? (size - offset) : 16;
+        for (size_t i = 0; i < count; ++i) data[offset + i] ^= keystream[i];
+        increment_counter(block);
+        offset += count;
+    }
+}
+
+}
+
+void apply(PackedByteArray &bytes) {
+    if (bytes.is_empty()) return;
+    xor_ctr(bytes.ptrw(), static_cast<size_t>(bytes.size()));
+}
+
+}

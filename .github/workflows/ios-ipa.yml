@@ -1,0 +1,134 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.4.1
+  GODOT_TAG: 4.4.1-stable
+  BUNDLE_ID: moe.client.unf
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot source and iOS build
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/godot
+            ${{ runner.temp }}/godot-ios-build
+          key: godot-ios-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/workflows/ios-ipa.yml') }}
+
+      - name: Prepare toolchain
+        run: |
+          xcodebuild -version
+          python3 -m pip install --user scons
+
+      - name: Build godot-cpp for the iOS extension
+        run: |
+          if [ ! -d "$RUNNER_TEMP/godot-cpp" ]; then
+            git clone --depth 1 --branch godot-4.4.1 https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
+          fi
+          cd "$RUNNER_TEMP/godot-cpp"
+          scons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
+
+      - name: Fetch and build Godot iOS template
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$GODOT_TAG" https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot"
+          cd "$RUNNER_TEMP/godot"
+          python3 -m SCons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
+          mkdir -p "$RUNNER_TEMP/godot-ios-build"
+          cp bin/godot.ios.template_release.arm64 "$RUNNER_TEMP/godot-ios-build/"
+
+      - name: Install cached Godot editor and export templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/godot-editor
+            ~/Library/Application Support/Godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-editor-${{ runner.os }}-${{ env.GODOT_VERSION }}
+
+      - name: Download Godot editor and export templates
+        run: |
+          mkdir -p "$RUNNER_TEMP/godot-editor"
+          if [ ! -x "$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot" ]; then
+            curl -L --fail --retry 4 \
+              "https://downloads.godotengine.org/4.4.1/Godot_v4.4.1-stable_macos.universal.zip" \
+              -o "$RUNNER_TEMP/godot-editor.zip"
+            unzip -q -o "$RUNNER_TEMP/godot-editor.zip" -d "$RUNNER_TEMP/godot-editor"
+            mv "$RUNNER_TEMP/godot-editor/Godot.app" "$RUNNER_TEMP/godot-editor/Godot.app.tmp" 2>/dev/null || true
+            if [ -d "$RUNNER_TEMP/godot-editor/Godot.app.tmp" ]; then
+              mv "$RUNNER_TEMP/godot-editor/Godot.app.tmp" "$RUNNER_TEMP/godot-editor/Godot.app"
+            fi
+          fi
+          GODOT="$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot"
+          test -x "$GODOT"
+          TEMPLATE_DIR="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$TEMPLATE_DIR"
+          if [ ! -f "$TEMPLATE_DIR/ios.zip" ]; then
+            curl -L --fail --retry 4 \
+              "https://downloads.godotengine.org/4.4.1/Godot_v4.4.1-stable_export_templates.tpz" \
+              -o "$RUNNER_TEMP/templates.tpz"
+            unzip -q -o "$RUNNER_TEMP/templates.tpz" -d "$RUNNER_TEMP/templates"
+            cp -R "$RUNNER_TEMP/templates/templates/"* "$TEMPLATE_DIR/"
+          fi
+
+      - name: Build AVPlayer plugin
+        env:
+          GODOT_SOURCE: ${{ runner.temp }}/godot
+        run: bash ios/build-video-plugin.sh
+
+      - name: Build client GDExtension
+        run: |
+          mkdir -p native/client/bin
+          scons -C native/client platform=ios target=template_release arch=arm64 \
+            godot_cpp="$RUNNER_TEMP/godot-cpp" \
+            IOS_SDK=iphoneos -j "$(sysctl -n hw.logicalcpu)"
+
+      - name: Export iOS Xcode project
+        run: |
+          GODOT="$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot"
+          mkdir -p build/ios
+          "$GODOT" --headless --path . --editor --quit
+          "$GODOT" --headless --path . --export-release "iOS" build/ios/UnFalsus.xcodeproj
+
+      - name: Build unsigned iOS app
+        run: |
+          cd build/ios
+          PROJECT="$(find . -maxdepth 1 -name '*.xcodeproj' -print -quit)"
+          test -n "$PROJECT"
+          SCHEME="$(xcodebuild -list -project "$PROJECT" | awk '/Schemes:/{getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit}')"
+          test -n "$SCHEME"
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CONFIGURATION_BUILD_DIR="$PWD/unsigned-app" build
+          APP="$(find unsigned-app -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload UnFalsus-iOS-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnFalsus-iOS-unsigned
+          path: build/ios/UnFalsus-iOS-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" build/ios/UnFalsus-iOS-unsigned.ipa \
+            --title "Un Falsus iOS ${GITHUB_RUN_NUMBER}" \
+            --notes "Unsigned iOS IPA built by GitHub Actions. Sign it with the project's Apple development or distribution identity before installing on a device."

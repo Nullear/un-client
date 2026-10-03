@@ -1,0 +1,1620 @@
+{
+  "design": {
+    "w": 1280,
+    "h": 720
+  },
+  "fps": 60,
+  "animations": [
+    {
+      "name": "loading",
+      "startIndex": 0,
+      "endIndex": 54
+    },
+    {
+      "name": "intro",
+      "startIndex": 55,
+      "endIndex": 1020
+    },
+    {
+      "name": "introSkip",
+      "startIndex": 996,
+      "endIndex": 1020
+    }
+  ],
+  "duration": 1020,
+  "nodes": [
+    {
+      "class": "Node",
+      "name": "Layer",
+      "parent": null,
+      "actionTag": 0,
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "size": {
+        "w": 1280.0,
+        "h": 720.0
+      },
+      "alpha": 255,
+      "visible": true,
+      "zOrder": 0,
+      "file": null,
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainWhite2",
+      "parent": "Layer",
+      "actionTag": 3957554116,
+      "position": {
+        "x": 640.0,
+        "y": 360.0
+      },
+      "scale": {
+        "x": 2080.0,
+        "y": 960.0002
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1.0,
+        "h": 1.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "img/white.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainGlass",
+      "parent": "Layer",
+      "actionTag": 1995803794,
+      "position": {
+        "x": 635.0,
+        "y": 335.0
+      },
+      "scale": {
+        "x": 0.85,
+        "y": 0.85
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1458.0,
+        "h": 820.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/main_glass.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainGlass2",
+      "parent": "Layer",
+      "actionTag": 3547716919,
+      "position": {
+        "x": 635.48,
+        "y": 349.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1458.0,
+        "h": 820.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "startup/main_glass.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "SingleNode",
+      "name": "characterContainer",
+      "parent": "Layer",
+      "actionTag": 4160469248,
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "size": {
+        "w": 0.0,
+        "h": 0.0
+      },
+      "alpha": 255,
+      "visible": true,
+      "zOrder": 0,
+      "file": null,
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainCharT",
+      "parent": "characterContainer",
+      "actionTag": 396019629,
+      "position": {
+        "x": 710.0,
+        "y": -520.0
+      },
+      "scale": {
+        "x": 0.9,
+        "y": 0.9
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.0
+      },
+      "size": {
+        "w": 1478.0,
+        "h": 2061.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/1080/char_t.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainCharH",
+      "parent": "characterContainer",
+      "actionTag": 2917435538,
+      "position": {
+        "x": 475.0,
+        "y": -370.0
+      },
+      "scale": {
+        "x": 0.9,
+        "y": 0.9
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.0
+      },
+      "size": {
+        "w": 1857.0,
+        "h": 1791.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/1080/char_h.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "titleGlow",
+      "parent": "Layer",
+      "actionTag": 3818638141,
+      "position": {
+        "x": 640.0,
+        "y": 124.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1415.0,
+        "h": 395.0
+      },
+      "alpha": 177,
+      "visible": false,
+      "zOrder": 0,
+      "file": "startup/1080/title_glow.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "title_4",
+      "parent": "Layer",
+      "actionTag": 1974567817,
+      "position": {
+        "x": 640.0004,
+        "y": 124.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1415.0,
+        "h": 395.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/1080/title.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Text",
+      "name": "copyright_text",
+      "parent": "Layer",
+      "actionTag": 974960189,
+      "position": {
+        "x": 31.0,
+        "y": 19.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.5
+      },
+      "size": {
+        "w": 96.0,
+        "h": 26.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "Fonts/GeosansLight.ttf",
+      "text": "lowiro - v0.6",
+      "fontName": "",
+      "fontSize": 20
+    },
+    {
+      "class": "Text",
+      "name": "copyright_symbol",
+      "parent": "Layer",
+      "actionTag": 567270378,
+      "position": {
+        "x": 20.2157,
+        "y": 18.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 17.0,
+        "h": 26.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "Fonts/L2-Light.ttf",
+      "text": "\u00a9",
+      "fontName": "",
+      "fontSize": 16
+    },
+    {
+      "class": "Sprite",
+      "name": "mainWhite",
+      "parent": "Layer",
+      "actionTag": 458402667,
+      "position": {
+        "x": 373.9069,
+        "y": 360.0
+      },
+      "scale": {
+        "x": 2060.0,
+        "y": 960.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1.0,
+        "h": 1.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "img/white.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainWhiteInsight",
+      "parent": "Layer",
+      "actionTag": 3977247674,
+      "position": {
+        "x": 373.9069,
+        "y": 360.0
+      },
+      "scale": {
+        "x": 2060.0,
+        "y": 960.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1.0,
+        "h": 1.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "img/white.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "mainTitle2",
+      "parent": "Layer",
+      "actionTag": 4005248901,
+      "position": {
+        "x": 640.0,
+        "y": 124.0
+      },
+      "scale": {
+        "x": 1.02,
+        "y": 1.02
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1415.0,
+        "h": 395.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "startup/1080/title_glow.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Text",
+      "name": "loadingText",
+      "parent": "Layer",
+      "actionTag": 2437548021,
+      "position": {
+        "x": 640.0002,
+        "y": 100.0
+      },
+      "scale": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "size": {
+        "w": 0.0,
+        "h": 0.0
+      },
+      "alpha": 255,
+      "visible": true,
+      "zOrder": 0,
+      "file": "Fonts/L2-Regular.ttf",
+      "text": "",
+      "fontName": "",
+      "fontSize": 26
+    },
+    {
+      "class": "Sprite",
+      "name": "m1",
+      "parent": "Layer",
+      "actionTag": 1694953934,
+      "position": {
+        "x": 239.6,
+        "y": 457.17
+      },
+      "scale": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.5
+      },
+      "size": {
+        "w": 596.0,
+        "h": 159.0
+      },
+      "alpha": 255,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/m1.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "m2",
+      "parent": "Layer",
+      "actionTag": 1964920618,
+      "position": {
+        "x": 239.62,
+        "y": 359.65
+      },
+      "scale": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1541.0,
+        "h": 157.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/m2.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "m3",
+      "parent": "Layer",
+      "actionTag": 3005133603,
+      "position": {
+        "x": 239.6,
+        "y": 261.13
+      },
+      "scale": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "anchor": {
+        "x": 0.0,
+        "y": 0.5
+      },
+      "size": {
+        "w": 1247.0,
+        "h": 159.0
+      },
+      "alpha": 0,
+      "visible": false,
+      "zOrder": 0,
+      "file": "startup/m3.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    },
+    {
+      "class": "Sprite",
+      "name": "lowiro_logo",
+      "parent": "Layer",
+      "actionTag": 1186295538,
+      "position": {
+        "x": 1260.0,
+        "y": 7.0
+      },
+      "scale": {
+        "x": 0.6,
+        "y": 0.6
+      },
+      "anchor": {
+        "x": 1.0,
+        "y": 0.0
+      },
+      "size": {
+        "w": 220.0,
+        "h": 96.0
+      },
+      "alpha": 0,
+      "visible": true,
+      "zOrder": 0,
+      "file": "startup/lowiro_white.png",
+      "text": null,
+      "fontName": null,
+      "fontSize": null
+    }
+  ],
+  "tracks": [
+    {
+      "name": "mainGlass",
+      "actionTag": 1995803794,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 983,
+          "tween": true,
+          "value": {
+            "x": 0.85,
+            "y": 0.85
+          }
+        },
+        {
+          "frameIndex": 991,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainGlass",
+      "actionTag": 1995803794,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainGlass",
+      "actionTag": 1995803794,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 983,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 991,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    },
+    {
+      "name": "mainGlass",
+      "actionTag": 1995803794,
+      "property": "FileData",
+      "frames": [
+        {
+          "frameIndex": 991,
+          "tween": false,
+          "file": {
+            "path": "startup/main_glass.png",
+            "plist": "",
+            "type": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainGlass",
+      "actionTag": 1995803794,
+      "property": "BlendFunc",
+      "frames": [
+        {
+          "frameIndex": 991,
+          "tween": false,
+          "i2": 1,
+          "f2": 0.0
+        }
+      ]
+    },
+    {
+      "name": "mainCharT",
+      "actionTag": 396019629,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": {
+            "x": 0.9,
+            "y": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainCharT",
+      "actionTag": 396019629,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainCharT",
+      "actionTag": 396019629,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 965,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    },
+    {
+      "name": "mainCharT",
+      "actionTag": 396019629,
+      "property": "AnchorPoint",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainCharH",
+      "actionTag": 2917435538,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": {
+            "x": 0.9,
+            "y": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainCharH",
+      "actionTag": 2917435538,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainCharH",
+      "actionTag": 2917435538,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 965,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    },
+    {
+      "name": "mainCharH",
+      "actionTag": 2917435538,
+      "property": "AnchorPoint",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "titleGlow",
+      "actionTag": 3818638141,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "titleGlow",
+      "actionTag": 3818638141,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "titleGlow",
+      "actionTag": 3818638141,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": 88
+        }
+      ]
+    },
+    {
+      "name": "titleGlow",
+      "actionTag": 3818638141,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 975,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 980,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "title_4",
+      "actionTag": 1974567817,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 634,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 805,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    },
+    {
+      "name": "copyright_text",
+      "actionTag": 974960189,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "copyright_text",
+      "actionTag": 974960189,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "copyright_text",
+      "actionTag": 974960189,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 975,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 985,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "copyright_text",
+      "actionTag": 974960189,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": 204
+        }
+      ]
+    },
+    {
+      "name": "copyright_symbol",
+      "actionTag": 567270378,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": {
+            "x": 1.0,
+            "y": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "copyright_symbol",
+      "actionTag": 567270378,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "copyright_symbol",
+      "actionTag": 567270378,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 975,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 985,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "copyright_symbol",
+      "actionTag": 567270378,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    },
+    {
+      "name": "mainWhite",
+      "actionTag": 458402667,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 973,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0
+          }
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 987,
+          "tween": true,
+          "value": {
+            "x": 2072.5,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 990,
+          "tween": true,
+          "value": {
+            "x": 2025.9091,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 1020,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0002
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainWhite",
+      "actionTag": 458402667,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainWhite",
+      "actionTag": 458402667,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 973,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": 37
+        },
+        {
+          "frameIndex": 1020,
+          "tween": true,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "mainWhite",
+      "actionTag": 458402667,
+      "property": "AnchorPoint",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainWhiteInsight",
+      "actionTag": 3977247674,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 973,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0
+          }
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 987,
+          "tween": true,
+          "value": {
+            "x": 2072.5,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 990,
+          "tween": true,
+          "value": {
+            "x": 2025.9091,
+            "y": 960.0002
+          }
+        },
+        {
+          "frameIndex": 1020,
+          "tween": true,
+          "value": {
+            "x": 2060.0,
+            "y": 960.0002
+          }
+        }
+      ]
+    },
+    {
+      "name": "mainWhiteInsight",
+      "actionTag": 3977247674,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "mainWhiteInsight",
+      "actionTag": 3977247674,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 973,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 980,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 1020,
+          "tween": true,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "mainWhiteInsight",
+      "actionTag": 3977247674,
+      "property": "AnchorPoint",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "m1",
+      "actionTag": 1694953934,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "m1",
+      "actionTag": 1694953934,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "m1",
+      "actionTag": 1694953934,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 160,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 260,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 575,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 625,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "m1",
+      "actionTag": 1694953934,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 160,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 260,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 575,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 625,
+          "tween": true,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "m2",
+      "actionTag": 1964920618,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "m2",
+      "actionTag": 1964920618,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "m2",
+      "actionTag": 1964920618,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 295,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 575,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 625,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "m2",
+      "actionTag": 1964920618,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 295,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 390,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 575,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 625,
+          "tween": true,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "m3",
+      "actionTag": 3005133603,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true,
+          "value": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "m3",
+      "actionTag": 3005133603,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "m3",
+      "actionTag": 3005133603,
+      "property": "VisibleForFrame",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": false,
+          "value": false
+        },
+        {
+          "frameIndex": 425,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 515,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 575,
+          "tween": false,
+          "value": true
+        },
+        {
+          "frameIndex": 625,
+          "tween": false,
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "m3",
+      "actionTag": 3005133603,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 425,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 515,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 575,
+          "tween": true,
+          "value": 255
+        },
+        {
+          "frameIndex": 625,
+          "tween": true,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "lowiro_logo",
+      "actionTag": 1186295538,
+      "property": "Scale",
+      "frames": [
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": {
+            "x": 0.6,
+            "y": 0.6
+          }
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": {
+            "x": 0.6,
+            "y": 0.6
+          }
+        }
+      ]
+    },
+    {
+      "name": "lowiro_logo",
+      "actionTag": 1186295538,
+      "property": "RotationSkew",
+      "frames": [
+        {
+          "frameIndex": 0,
+          "tween": true
+        },
+        {
+          "frameIndex": 0,
+          "tween": true
+        }
+      ]
+    },
+    {
+      "name": "lowiro_logo",
+      "actionTag": 1186295538,
+      "property": "Alpha",
+      "frames": [
+        {
+          "frameIndex": 975,
+          "tween": true,
+          "value": 0
+        },
+        {
+          "frameIndex": 985,
+          "tween": true,
+          "value": 255
+        }
+      ]
+    }
+  ]
+}

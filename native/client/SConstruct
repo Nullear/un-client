@@ -1,0 +1,39 @@
+import os
+
+env = Environment(ENV=os.environ)
+platform = ARGUMENTS.get("platform", "windows")
+target = ARGUMENTS.get("target", "template_debug")
+arch = ARGUMENTS.get("arch", "x86_64" if platform == "windows" else "arm64")
+godot_cpp = ARGUMENTS.get("godot_cpp", "/root/build/gde_gozen/godot_cpp")
+suffix = "%s.%s.%s" % (platform, target, arch)
+env.Append(CPPPATH=[godot_cpp + "/include", godot_cpp + "/gen/include", godot_cpp + "/gdextension"])
+env.Append(CXXFLAGS=["-std=c++17", "-O2", "-fPIC"])
+env.Append(LIBPATH=[godot_cpp + "/bin"])
+env.Append(LIBS=["godot-cpp." + suffix])
+
+if platform == "windows":
+    env["CXX"] = "x86_64-w64-mingw32-g++"
+    env["SHLINK"] = "x86_64-w64-mingw32-g++"
+    env.Append(SHLINKFLAGS=["-shared", "-static-libgcc", "-static-libstdc++"])
+    env.Append(LIBS=["winpthread", "winhttp", "mfplat", "mfreadwrite", "mfuuid", "ole32", "propsys", "uuid"])
+    name = "libunfalsus." + suffix + ".dll"
+elif platform == "android":
+    toolchain = os.environ["ANDROID_NDK_ROOT"] + "/toolchains/llvm/prebuilt/linux-x86_64/bin/"
+    env["CXX"] = toolchain + "aarch64-linux-android23-clang++"
+    env["SHLINK"] = env["CXX"]
+    env.Append(SHLINKFLAGS=["-shared", "-static-libstdc++"])
+    env.Append(LIBS=["mediandk"])
+    name = "libunfalsus." + suffix + ".so"
+elif platform == "ios":
+    sdk = os.environ.get("IOS_SDK", "iphoneos")
+    env["CXX"] = "xcrun --sdk %s clang++" % sdk
+    env["SHLINK"] = env["CXX"]
+    env.Append(SHLINKFLAGS=["-dynamiclib", "-fobjc-arc", "-arch", arch,
+                            "-miphoneos-version-min=14.0"])
+    env.Append(LINKFLAGS=["-framework", "Foundation"])
+    name = "libunfalsus." + suffix + ".dylib"
+else:
+    raise ValueError("Unsupported platform: " + platform)
+
+sources = Glob("*.cpp")
+env.SharedLibrary(target="bin/" + name, source=sources)

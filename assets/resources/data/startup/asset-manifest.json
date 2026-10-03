@@ -1,0 +1,135 @@
+{
+  "source": "arcaea_7.0.256c.apk",
+  "sourcePrefix": "assets/startup/",
+  "textures": {
+    "start_icon.png": {
+      "width": 542,
+      "height": 541,
+      "format": "RGBA PNG",
+      "sha256Prefix": "f474cc91e92b1dc1"
+    },
+    "start_icon_core.png": {
+      "width": 528,
+      "height": 529,
+      "format": "RGBA PNG",
+      "sha256Prefix": "a4c7a958805e8366"
+    },
+    "start_wreath.png": {
+      "width": 1123,
+      "height": 1071,
+      "format": "RGBA PNG",
+      "sha256Prefix": "7939fefde20fb2b1"
+    },
+    "start_wreath_core.png": {
+      "width": 745,
+      "height": 576,
+      "format": "RGBA PNG",
+      "sha256Prefix": "45754e36c93751dd"
+    },
+    "1080/title.png": {
+      "width": 1415,
+      "height": 395,
+      "format": "RGBA PNG",
+      "sha256Prefix": "3fa01148e97fcc22"
+    },
+    "download/1080/download-backing.png": {
+      "width": 2560,
+      "height": 663,
+      "format": "RGBA PNG",
+      "sha256Prefix": "51b44085c391958a"
+    },
+    "download/1080/failed-backing.png": {
+      "width": 2560,
+      "height": 663,
+      "format": "RGBA PNG",
+      "sha256Prefix": "79566612e9aafc5d"
+    },
+    "download/1080/confirm-button.png": {
+      "width": 404,
+      "height": 108,
+      "format": "RGBA PNG",
+      "sha256Prefix": "fa8c6f0dad163960"
+    },
+    "download/1080/confirm-button-pressed.png": {
+      "width": 404,
+      "height": 108,
+      "format": "RGBA PNG",
+      "sha256Prefix": "cbd954c43999e2a9"
+    },
+    "download/1080/cancel-button.png": {
+      "width": 385,
+      "height": 108,
+      "format": "RGBA PNG",
+      "sha256Prefix": "7f4b377967cf8e64"
+    },
+    "download/1080/cancel-button-pressed.png": {
+      "width": 385,
+      "height": 108,
+      "format": "RGBA PNG",
+      "sha256Prefix": "7928da0cc98cb8e4"
+    },
+    "activity_icon.png": {
+      "width": 97,
+      "height": 146,
+      "format": "RGBA PNG",
+      "source": "img/activity_icon.png"
+    },
+    "download/1080/bar-empty.png": {
+      "width": 1673,
+      "height": 11,
+      "format": "RGBA PNG",
+      "sha256Prefix": "3f6e5c13c0c8941d",
+      "uuid": "7005a59f-ea82-4b61-bf13-96a89fb9afef"
+    },
+    "download/1080/bar-full.png": {
+      "width": 1673,
+      "height": 11,
+      "format": "RGBA PNG",
+      "sha256Prefix": "31d831248785ece1",
+      "uuid": "24a48535-f484-4eba-a2df-ec30d55a47cc"
+    },
+    "download/1080/bar-progress-diamond.png": {
+      "width": 34,
+      "height": 34,
+      "format": "RGBA PNG",
+      "sha256Prefix": "317e3da5c6a242ff",
+      "uuid": "0ff903dc-75a4-4b3a-a841-a7e862b1a07e"
+    },
+    "download/1080/bar-progress-tail.png": {
+      "width": 116,
+      "height": 11,
+      "format": "RGBA PNG",
+      "sha256Prefix": "cd35ebf0db85463d",
+      "uuid": "de44755b-e9c1-4135-be4f-bc9e007b88de"
+    },
+    "download/1080/bar-accent.png": {
+      "width": 33,
+      "height": 33,
+      "format": "RGBA PNG",
+      "sha256Prefix": "7ab628a92c237965",
+      "uuid": "579c9bbf-1a88-47c2-87bc-2c554385f653"
+    },
+    "download/1080/bar-under-accent.png": {
+      "width": 477,
+      "height": 106,
+      "format": "RGBA PNG",
+      "sha256Prefix": "134029e8e117a00d",
+      "uuid": "d0e5d45e-74ec-41ef-8f6e-10c34b8093dc"
+    },
+    "download/1080/bar-shadow.png": {
+      "width": 1,
+      "height": 441,
+      "format": "RGBA PNG",
+      "sha256Prefix": "071d7165586da26c",
+      "uuid": "561df2b1-00ee-4d55-8642-3ef886489005"
+    }
+  },
+  "rules": {
+    "preserveCanvas": true,
+    "preserveAlpha": true,
+    "preservePixelDimensions": true,
+    "creatorSpriteFrameTrim": false,
+    "creatorSpriteFrameRotate": false,
+    "anchor": "center"
+  }
+}

@@ -1,0 +1,95 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Windows.Forms;
+
+internal static class SecureLauncher
+{
+    private static readonly byte[] Key = Convert.FromBase64String("@ENCRYPTION_KEY@");
+    private static readonly byte[] MacKey = Convert.FromBase64String("@MAC_KEY@");
+
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        string session = Path.Combine(Path.GetTempPath(), "UnFalsusOnline", Guid.NewGuid().ToString("N"));
+        try
+        {
+            string payload = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "client.bin");
+            byte[] package = File.ReadAllBytes(payload);
+            if (package.Length < 64) throw new InvalidDataException("Invalid encrypted package.");
+            byte[] signature;
+            using (var mac = new HMACSHA256(MacKey))
+                signature = mac.ComputeHash(package, 0, package.Length - 32);
+            int mismatch = 0;
+            for (int i = 0; i < signature.Length; ++i)
+                mismatch |= signature[i] ^ package[package.Length - 32 + i];
+            if (mismatch != 0) throw new InvalidDataException("Encrypted package integrity check failed.");
+            byte[] iv = new byte[16];
+            Buffer.BlockCopy(package, 0, iv, 0, iv.Length);
+            byte[] plaintext;
+            using (var aes = Aes.Create())
+            {
+                aes.Key = Key;
+                aes.IV = iv;
+                using (var decryptor = aes.CreateDecryptor())
+                    plaintext = decryptor.TransformFinalBlock(package, 16, package.Length - 48);
+            }
+            Directory.CreateDirectory(session);
+            using (var memory = new MemoryStream(plaintext))
+            using (var archive = new ZipArchive(memory, ZipArchiveMode.Read))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    string destination = Path.GetFullPath(Path.Combine(session, entry.FullName));
+                    if (!destination.StartsWith(session + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("Invalid package path.");
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                    entry.ExtractToFile(destination);
+                }
+            }
+            Array.Clear(plaintext, 0, plaintext.Length);
+            string arguments = "";
+            foreach (string argument in args)
+            {
+                if (arguments.Length > 0) arguments += " ";
+                arguments += Quote(argument);
+            }
+            var start = new ProcessStartInfo(Path.Combine(session, "UnFalsusOnline.exe"), arguments);
+            start.WorkingDirectory = session;
+            start.UseShellExecute = false;
+            using (var client = Process.Start(start))
+            {
+                client.WaitForExit();
+                return client.ExitCode;
+            }
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(error.Message, "Un Falsus Online", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+        finally
+        {
+            try { if (Directory.Exists(session)) Directory.Delete(session, true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private static string Quote(string argument)
+    {
+        var result = new System.Text.StringBuilder("\"");
+        int slashes = 0;
+        foreach (char character in argument)
+        {
+            if (character == '\\') { ++slashes; continue; }
+            result.Append('\\', character == '"' ? slashes * 2 + 1 : slashes);
+            result.Append(character);
+            slashes = 0;
+        }
+        result.Append('\\', slashes * 2);
+        return result.Append('"').ToString();
+    }
+}

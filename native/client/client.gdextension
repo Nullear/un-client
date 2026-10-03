@@ -1,0 +1,10 @@
+[configuration]
+entry_symbol = "un_falsus_client_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+windows.debug.x86_64 = "res://native/client/bin/libunfalsus.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://native/client/bin/libunfalsus.windows.template_release.x86_64.dll"
+android.debug.arm64 = "res://native/client/bin/libunfalsus.android.template_debug.arm64.so"
+android.release.arm64 = "res://native/client/bin/libunfalsus.android.template_release.arm64.so"
+ios.release.arm64 = "res://native/client/bin/libunfalsus.ios.template_release.arm64.dylib"

@@ -1,0 +1,12 @@
+[config]
+name="UnFalsusVideo"
+binary="UnFalsusVideo.a"
+initialization="register_unfalsus_video_types"
+deinitialization="unregister_unfalsus_video_types"
+
+[dependencies]
+linked=[]
+embedded=[]
+system=["Foundation.framework", "UIKit.framework", "AVFoundation.framework", "CoreMedia.framework", "SystemConfiguration.framework"]
+capabilities=[]
+files=[]

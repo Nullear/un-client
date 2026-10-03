@@ -1,0 +1,28 @@
+name: Build iOS video plugin
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios-video:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare toolchain
+        run: |
+          xcodebuild -version
+          python3 -m pip install --user scons
+      - name: Generate Godot 4.4.1 iOS headers
+        run: |
+          git clone --depth 1 --branch 4.4.1-stable https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot"
+          cd "$RUNNER_TEMP/godot"
+          python3 -m SCons platform=ios target=template_release arch=arm64 -j 4
+      - name: Build AVPlayer plugin
+        env:
+          GODOT_SOURCE: ${{ runner.temp }}/godot
+        run: bash ios/build-video-plugin.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-avplayer-plugin
+          path: ios/plugins/UnFalsusVideo/*
