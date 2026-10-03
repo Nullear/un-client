@@ -47,7 +47,9 @@ jobs:
           cd "$RUNNER_TEMP/godot"
           python3 -m SCons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
           mkdir -p "$RUNNER_TEMP/godot-ios-build"
-          cp bin/godot.ios.template_release.arm64 "$RUNNER_TEMP/godot-ios-build/"
+           TEMPLATE="$(find bin -maxdepth 1 -type f -name 'godot.ios.template_release*' -print -quit)"
+           test -n "$TEMPLATE"
+           cp "$TEMPLATE" "$RUNNER_TEMP/godot-ios-build/godot.ios.template_release"
 
       - name: Install cached Godot editor and export templates
         uses: actions/cache@v4
