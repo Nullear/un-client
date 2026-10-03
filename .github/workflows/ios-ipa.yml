@@ -38,7 +38,7 @@ jobs:
             git clone --depth 1 --branch godot-4.4.1-stable https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
           fi
           cd "$RUNNER_TEMP/godot-cpp"
-          scons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
+          python3 -m SCons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
 
       - name: Fetch and build Godot iOS template
         if: steps.godot-cache.outputs.cache-hit != 'true'
@@ -90,7 +90,7 @@ jobs:
       - name: Build client GDExtension
         run: |
           mkdir -p native/client/bin
-          scons -C native/client platform=ios target=template_release arch=arm64 \
+          python3 -m SCons -C native/client platform=ios target=template_release arch=arm64 \
             godot_cpp="$RUNNER_TEMP/godot-cpp" \
             IOS_SDK=iphoneos -j "$(sysctl -n hw.logicalcpu)"
 
