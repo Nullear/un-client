@@ -35,7 +35,7 @@ jobs:
       - name: Build godot-cpp for the iOS extension
         run: |
           if [ ! -d "$RUNNER_TEMP/godot-cpp" ]; then
-            git clone --depth 1 --branch 4.4.1 https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
+            git clone --depth 1 --branch godot-4.4.1-stable https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
           fi
           cd "$RUNNER_TEMP/godot-cpp"
           scons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
