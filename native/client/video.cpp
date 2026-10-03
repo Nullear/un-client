@@ -629,7 +629,6 @@ void ClientVideo::publish_hw() {
 }
 #else
 bool ClientVideo::start_hw(const char *, bool) { return false; }
-void ClientVideo::start() {}
 void ClientVideo::stop_hw() {}
 void ClientVideo::publish_hw() {}
 #endif
