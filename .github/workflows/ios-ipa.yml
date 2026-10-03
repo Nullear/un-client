@@ -97,8 +97,7 @@ jobs:
         run: |
           GODOT="$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot"
           mkdir -p build/ios
-          "$GODOT" --headless --path . --editor --quit
-          "$GODOT" --headless --path . --export-release "iOS" build/ios/UnFalsus.xcodeproj
+           "$GODOT" --headless --path . --export-release "iOS" build/ios/UnFalsus.xcodeproj
 
       - name: Build unsigned iOS app
         run: |
