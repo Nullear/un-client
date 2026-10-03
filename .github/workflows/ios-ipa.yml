@@ -30,7 +30,7 @@ jobs:
       - name: Prepare toolchain
         run: |
           xcodebuild -version
-          python3 -m pip install --user scons
+          python3 -m pip install --user --break-system-packages scons
 
       - name: Build godot-cpp for the iOS extension
         run: |
