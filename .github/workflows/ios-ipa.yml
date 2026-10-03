@@ -61,7 +61,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/godot-editor"
           if [ ! -x "$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot" ]; then
             curl -L --fail --retry 4 \
-              "https://downloads.godotengine.org/4.4.1/Godot_v4.4.1-stable_macos.universal.zip" \
+              "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_macos.universal.zip" \
               -o "$RUNNER_TEMP/godot-editor.zip"
             unzip -q -o "$RUNNER_TEMP/godot-editor.zip" -d "$RUNNER_TEMP/godot-editor"
             mv "$RUNNER_TEMP/godot-editor/Godot.app" "$RUNNER_TEMP/godot-editor/Godot.app.tmp" 2>/dev/null || true
@@ -75,7 +75,7 @@ jobs:
           mkdir -p "$TEMPLATE_DIR"
           if [ ! -f "$TEMPLATE_DIR/ios.zip" ]; then
             curl -L --fail --retry 4 \
-              "https://downloads.godotengine.org/4.4.1/Godot_v4.4.1-stable_export_templates.tpz" \
+              "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz" \
               -o "$RUNNER_TEMP/templates.tpz"
             unzip -q -o "$RUNNER_TEMP/templates.tpz" -d "$RUNNER_TEMP/templates"
             cp -R "$RUNNER_TEMP/templates/templates/"* "$TEMPLATE_DIR/"
