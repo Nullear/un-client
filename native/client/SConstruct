@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 env = Environment(ENV=os.environ)
 platform = ARGUMENTS.get("platform", "windows")
@@ -33,6 +34,9 @@ elif platform == "ios":
     sdk = os.environ.get("IOS_SDK", "iphoneos")
     env["CXX"] = "xcrun --sdk %s clang++" % sdk
     env["SHLINK"] = env["CXX"]
+    sdk_path = subprocess.check_output(["xcrun", "--sdk", sdk, "--show-sdk-path"], text=True).strip()
+    env.Append(CXXFLAGS=["-isysroot", sdk_path, "-arch", arch, "-miphoneos-version-min=14.0"])
+    env.Append(SHLINKFLAGS=["-isysroot", sdk_path])
     env.Append(SHLINKFLAGS=["-dynamiclib", "-fobjc-arc", "-arch", arch,
                             "-miphoneos-version-min=14.0"])
     env.Append(LINKFLAGS=["-framework", "Foundation"])
@@ -41,4 +45,6 @@ else:
     raise ValueError("Unsupported platform: " + platform)
 
 sources = Glob("*.cpp")
-env.SharedLibrary(target="bin/" + name, source=sources)
+objects = [env.SharedObject(target="obj/" + suffix + "/" + os.path.splitext(str(source))[0], source=source)
+           for source in sources]
+env.SharedLibrary(target="bin/" + name, source=objects)
