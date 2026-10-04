@@ -11,8 +11,8 @@
 #include <algorithm>
 #include <atomic>
 
-extern "C" void register_unfalsus_video_types();
-extern "C" void unregister_unfalsus_video_types();
+extern "C" void register_unfalsus_video_types_c();
+extern "C" void unregister_unfalsus_video_types_c();
 
 @interface UFVideoView : UIView
 @end
@@ -159,11 +159,14 @@ public:
 
 static UnFalsusVideo *singleton = nullptr;
 
-extern "C" void register_unfalsus_video_types() {
+extern "C" void register_unfalsus_video_types_c() {
     singleton = memnew(UnFalsusVideo);
     Engine::get_singleton()->add_singleton(Engine::Singleton("UnFalsusVideo", singleton));
 }
 
-extern "C" void unregister_unfalsus_video_types() {
+extern "C" void unregister_unfalsus_video_types_c() {
     if (singleton) { memdelete(singleton); singleton = nullptr; }
 }
+
+void register_unfalsus_video_types() { register_unfalsus_video_types_c(); }
+void unregister_unfalsus_video_types() { unregister_unfalsus_video_types_c(); }
