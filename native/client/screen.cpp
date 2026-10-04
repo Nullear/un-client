@@ -259,6 +259,23 @@ void ClientScreen::_ready() {
     if (scene_kind == 0) build_startup();
     else if (scene_kind == 1) build_menu();
     else build_konzetsu();
+    if (scene_kind == 0 && OS::get_singleton()->get_name() == "iOS") {
+        // iOS uses AVPlayer as a window-level overlay. Skip the optional
+        // intro/title videos and enter the actual startup screen directly.
+        if (Node *black = stage->find_child("StartupBlack", false, false))
+            if (auto *item = Object::cast_to<Control>(black)) item->hide();
+        title_art = image(stage, "TitleArtwork", "startup/1080/title.png", 0, -354);
+        if (title_art) {
+            title_art->set_z_index(1);
+            title_art->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+            title_art->show();
+        }
+        startup_state = 3;
+        clock = 0;
+        title_time = 0;
+        content_ready = false;
+        startup_start_content_check();
+    }
     if (scene_kind == 1 || scene_kind == 2) ClientTransition::get_or_create(get_tree());
     layout();
     if (scene_kind == 1) prepare_menu_dialogs();
@@ -590,6 +607,12 @@ void ClientScreen::build_startup() {
     startup_base_url = arcapi::resolve_base_url(startup_base_url);
     if (!startup_base_url.begins_with("http://") && !startup_base_url.begins_with("https://"))
         UtilityFunctions::push_error("Startup Arcapi host could not be resolved");
+    if (OS::get_singleton()->get_name() == "iOS") {
+        startup_media_prepared = true;
+        startup_preload_index = 6;
+        ClientTransition::get_or_create(get_tree());
+        return;
+    }
     video = memnew(ClientVideo);
     video->set_name("IntroVideo");
     video->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
