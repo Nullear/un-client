@@ -240,6 +240,10 @@ static Array manifest_file(const String &file) {
     return object.get("assets", Array());
 }
 
+static void hide_ios_startup_video(ClientVideo *video) {
+    if (video && OS::get_singleton()->get_name() == "iOS") video->stop();
+}
+
 static void remove_asset(const String &path) {
     if (FileAccess::file_exists(path))
         DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(path));
@@ -672,6 +676,7 @@ void ClientScreen::startup_show_error(int code, int status) {
 }
 
 void ClientScreen::startup_show_login() {
+    hide_ios_startup_video(video);
     startup_clear_overlay();
     startup_overlay = memnew(Control);
     startup_overlay->set_name("StartupLoginOverlay");
@@ -782,6 +787,7 @@ void ClientScreen::startup_submit_login() {
 }
 
 void ClientScreen::startup_show_content_dialog(bool download, const String &body) {
+    hide_ios_startup_video(video);
     startup_dialog_download = download;
     startup_clear_overlay();
     startup_overlay = memnew(Control);
@@ -857,6 +863,7 @@ void ClientScreen::startup_cancel_content() {
 }
 
 void ClientScreen::startup_start_downloads() {
+    hide_ios_startup_video(video);
     startup_dialog_download = false;
     startup_clear_overlay();
     startup_manifest_index = 0;
