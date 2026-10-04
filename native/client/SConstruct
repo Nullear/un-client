@@ -24,6 +24,11 @@ elif platform == "android":
     env.Append(SHLINKFLAGS=["-shared", "-static-libstdc++"])
     env.Append(LIBS=["mediandk"])
     name = "libunfalsus." + suffix + ".so"
+elif platform == "macos":
+    env["CXX"] = "clang++"
+    env["SHLINK"] = env["CXX"]
+    env.Append(SHLINKFLAGS=["-dynamiclib", "-arch", arch])
+    name = "libunfalsus." + suffix + ".dylib"
 elif platform == "ios":
     sdk = os.environ.get("IOS_SDK", "iphoneos")
     env["CXX"] = "xcrun --sdk %s clang++" % sdk
