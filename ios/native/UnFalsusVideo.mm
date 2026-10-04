@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <atomic>
 
+extern "C" void register_unfalsus_video_types();
+extern "C" void unregister_unfalsus_video_types();
+
 @interface UFVideoView : UIView
 @end
 
