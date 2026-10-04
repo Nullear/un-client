@@ -60,7 +60,7 @@ public:
     void stop();
     bool start_hw(const char *path, bool repeat);
     bool hardware_finished() const;
-    bool is_prepared() const { return hw != nullptr; }
+    bool is_prepared() const { return hw != nullptr || prepared_resource.length() > 0; }
     double duration() const { return hardware_duration > 0 ? hardware_duration : frame_count * frame_time; }
     double position() const { return hardware_duration > 0 ? hardware_position : frame * frame_time; }
     void stop_hw();

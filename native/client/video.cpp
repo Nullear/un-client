@@ -794,6 +794,14 @@ bool ClientVideo::hardware_finished() const {
 bool ClientVideo::prepare(const String &resource, bool repeat) {
     const String path = extract_video(resource);
     if (path.is_empty()) return false;
+#if defined(__APPLE__) && !defined(__ANDROID__)
+    if (OS::get_singleton()->get_name() == "iOS") {
+        prepared_resource = resource;
+        loop = repeat;
+        finished = false;
+        return true;
+    }
+#endif
 #if defined(__ANDROID__) || defined(_WIN32)
     if (hw && prepared_resource == resource) return true;
     stop();
