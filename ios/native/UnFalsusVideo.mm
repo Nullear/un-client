@@ -102,10 +102,6 @@ class UnFalsusVideo : public Object {
     UIColor *render_background = nil;
 
     static UIView *find_render_view(UIView *root) {
-        // Godot 4.4's iOS renderer exposes the actual rendering surface as
-        // GodotView, whose backing layer is not always named Metal/OpenGL.
-        // The view itself is still the correct sibling insertion point.
-        if ([NSStringFromClass(root.class) isEqualToString:@"GodotView"]) return root;
         NSString *layer_name = NSStringFromClass(root.layer.class);
         if ([root.layer isKindOfClass:[CAEAGLLayer class]] ||
                 [root.layer isKindOfClass:[CAMetalLayer class]] ||
@@ -114,7 +110,20 @@ class UnFalsusVideo : public Object {
             UIView *found = find_render_view(child);
             if (found) return found;
         }
+        // Godot 4.4 may expose only its wrapper as GodotView. Keep this as a
+        // last resort so a real renderer child always wins when present.
+        if ([NSStringFromClass(root.class) isEqualToString:@"GodotView"]) return root;
         return nil;
+    }
+
+    static NSString *describe_view_tree(UIView *root, NSUInteger depth) {
+        if (!root || depth > 5) return @"";
+        NSMutableString *result = [NSMutableString stringWithFormat:@"%@%@ layer=%@ frame=%@\n",
+            [@"  " stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0],
+            NSStringFromClass(root.class), NSStringFromClass(root.layer.class), NSStringFromCGRect(root.frame)];
+        for (UIView *child in root.subviews)
+            [result appendString:describe_view_tree(child, depth + 1)];
+        return result;
     }
 
     static void _bind_methods() {
@@ -175,7 +184,8 @@ public:
 
             render_view = find_render_view(window.rootViewController.view);
             if (!render_view || !render_view.superview) {
-                debug_log([NSString stringWithFormat:@"render view unavailable root=%@", NSStringFromClass(window.rootViewController.view.class)]);
+                debug_log([NSString stringWithFormat:@"render view unavailable tree=\n%@",
+                    describe_view_tree(window.rootViewController.view, 0)]);
                 finished.store(true);
                 return;
             }
