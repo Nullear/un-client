@@ -102,6 +102,10 @@ class UnFalsusVideo : public Object {
     UIColor *render_background = nil;
 
     static UIView *find_render_view(UIView *root) {
+        // Godot 4.4's iOS renderer exposes the actual rendering surface as
+        // GodotView, whose backing layer is not always named Metal/OpenGL.
+        // The view itself is still the correct sibling insertion point.
+        if ([NSStringFromClass(root.class) isEqualToString:@"GodotView"]) return root;
         NSString *layer_name = NSStringFromClass(root.layer.class);
         if ([root.layer isKindOfClass:[CAEAGLLayer class]] ||
                 [root.layer isKindOfClass:[CAMetalLayer class]] ||
