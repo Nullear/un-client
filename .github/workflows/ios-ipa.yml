@@ -99,8 +99,10 @@ jobs:
           python3 -m SCons -C native/client platform=macos target=template_release arch=arm64 godot_cpp="$RUNNER_TEMP/godot-cpp" -j "$(sysctl -n hw.logicalcpu)"
           GODOT="$RUNNER_TEMP/godot-editor/Godot.app/Contents/MacOS/Godot"
           mkdir -p build/ios
-          "$GODOT" --headless --path . --export-release "iOS" build/ios/UnFalsus.xcodeproj 2>&1 | tee build/ios/export.log
-          if grep -E "Cannot get class 'ClientScreen'|_export_additional_assets" build/ios/export.log; then exit 1; fi
+           "$GODOT" --headless --path . --export-release "iOS" build/ios/UnFalsus.xcodeproj 2>&1 | tee build/ios/export.log
+           if grep -E "Cannot get class 'ClientScreen'|_export_additional_assets" build/ios/export.log; then exit 1; fi
+           python3 tools/strip_ios_godot_splash.py
+           if grep -R "SplashImage" build/ios/UnFalsus/Launch\ Screen.storyboard build/ios/UnFalsus/Images.xcassets 2>/dev/null; then exit 1; fi
 
       - name: Build unsigned iOS app
         run: |
