@@ -1,6 +1,7 @@
 #include "core/config/engine.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/variant/packed_byte_array.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
@@ -93,6 +94,9 @@ class UnFalsusVideo : public Object {
     UIImageView *title_view = nil;
     UIView *white_view = nil;
     AVPlayer *player = nil;
+    AVPlayerItemVideoOutput *output = nil;
+    int frame_width = 0;
+    int frame_height = 0;
     id end_observer = nil;
     std::atomic_bool finished = false;
     UIView *render_view = nil;
@@ -134,6 +138,9 @@ class UnFalsusVideo : public Object {
         ClassDB::bind_method(D_METHOD("set_title", "absolute_path"), &UnFalsusVideo::set_title);
         ClassDB::bind_method(D_METHOD("set_white", "opacity"), &UnFalsusVideo::set_white);
         ClassDB::bind_method(D_METHOD("is_cellular"), &UnFalsusVideo::is_cellular);
+        ClassDB::bind_method(D_METHOD("get_frame"), &UnFalsusVideo::get_frame);
+        ClassDB::bind_method(D_METHOD("get_frame_width"), &UnFalsusVideo::get_frame_width);
+        ClassDB::bind_method(D_METHOD("get_frame_height"), &UnFalsusVideo::get_frame_height);
     }
 
     void debug_log(NSString *message) {
@@ -157,6 +164,9 @@ class UnFalsusVideo : public Object {
         }
         [player pause];
         player = nil;
+        output = nil;
+        frame_width = 0;
+        frame_height = 0;
         [title_view removeFromSuperview];
         title_view = nil;
         [view removeFromSuperview];
@@ -176,6 +186,48 @@ class UnFalsusVideo : public Object {
     }
 
 public:
+    PackedByteArray get_frame() {
+        PackedByteArray bytes;
+        if (!output || !player) return bytes;
+        __block CVPixelBufferRef buffer = nil;
+        void (^read_frame)(void) = ^{
+            CMTime item_time = [output itemTimeForHostTime:CACurrentMediaTime()];
+            if ([output hasNewPixelBufferForItemTime:item_time])
+                buffer = [output copyPixelBufferForItemTime:item_time itemTimeForDisplay:nil];
+        };
+        if ([NSThread isMainThread]) read_frame();
+        else dispatch_sync(dispatch_get_main_queue(), read_frame);
+        if (!buffer) return bytes;
+        CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+        const size_t width = CVPixelBufferGetWidth(buffer);
+        const size_t height = CVPixelBufferGetHeight(buffer);
+        frame_width = int(width);
+        frame_height = int(height);
+        const size_t stride = CVPixelBufferGetBytesPerRow(buffer);
+        const uint8_t *source = static_cast<const uint8_t *>(CVPixelBufferGetBaseAddress(buffer));
+        if (source && CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA) {
+            bytes.resize(int(width * height * 4));
+            uint8_t *destination = bytes.ptrw();
+            for (size_t y = 0; y < height; ++y) {
+                const uint8_t *row = source + y * stride;
+                for (size_t x = 0; x < width; ++x) {
+                    const uint8_t *pixel = row + x * 4;
+                    uint8_t *out_pixel = destination + (y * width + x) * 4;
+                    out_pixel[0] = pixel[2];
+                    out_pixel[1] = pixel[1];
+                    out_pixel[2] = pixel[0];
+                    out_pixel[3] = pixel[3];
+                }
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+        CVPixelBufferRelease(buffer);
+        return bytes;
+    }
+
+    int get_frame_width() const { return frame_width; }
+    int get_frame_height() const { return frame_height; }
+
     bool play(const String &absolute_path, bool loop) {
         NSString *path = [NSString stringWithUTF8String:absolute_path.utf8().get_data()];
         if (!path || ![[NSFileManager defaultManager] fileExistsAtPath:path]) return false;
@@ -188,34 +240,12 @@ public:
             debug_log([NSString stringWithFormat:@"play loop=%@ path=%@", loop ? @"YES" : @"NO", path]);
             if (!window) { debug_log(@"no UIWindow"); finished.store(true); return; }
 
-            render_view = find_render_view(window.rootViewController.view);
-            if (!render_view || !render_view.superview) {
-                debug_log([NSString stringWithFormat:@"render view unavailable tree=\n%@",
-                    describe_view_tree(window.rootViewController.view, 0)]);
-                finished.store(true);
-                return;
-            }
-            render_was_opaque = render_view.opaque;
-            layer_was_opaque = render_view.layer.opaque;
-            render_background = render_view.backgroundColor;
-            render_layer_background = CGColorRetain(render_view.layer.backgroundColor);
-            render_view.opaque = NO;
-            render_view.layer.opaque = NO;
-            render_view.backgroundColor = UIColor.clearColor;
-            render_view.layer.backgroundColor = UIColor.clearColor.CGColor;
-            view = [[UFVideoView alloc] initWithFrame:render_view.frame];
-            view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            view.userInteractionEnabled = NO;
-            view.backgroundColor = UIColor.blackColor;
             AVPlayerItem *item = [AVPlayerItem playerItemWithURL:[NSURL fileURLWithPath:path]];
+            NSDictionary *settings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA) };
+            output = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:settings];
+            [item addOutput:output];
             player = [AVPlayer playerWithPlayerItem:item];
-            AVPlayerLayer *layer = (AVPlayerLayer *)view.layer;
-            layer.player = player;
-            layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-            [render_view.superview insertSubview:view belowSubview:render_view];
-            debug_log([NSString stringWithFormat:@"playing below view=%@ layer=%@ frame=%@ opaque=%@ layer_bg=clear",
-                NSStringFromClass(render_view.class), NSStringFromClass(render_view.layer.class),
-                NSStringFromCGRect(render_view.frame), render_view.opaque ? @"YES" : @"NO"]);
+            debug_log(@"AVPlayer frame output attached; video is rendered by Godot TextureRect");
             if (white_view) [window bringSubviewToFront:white_view];
 
             end_observer = [[NSNotificationCenter defaultCenter]

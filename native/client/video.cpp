@@ -679,9 +679,7 @@ bool ClientVideo::play(const String &resource, bool repeat, bool paused) {
         }
         ios = Engine::get_singleton()->get_singleton("UnFalsusVideo");
         ios_previous_transparent_background = get_viewport()->has_transparent_background();
-        get_viewport()->set_transparent_background(true);
         if (bool(ios->call("play", path, loop))) return true;
-        get_viewport()->set_transparent_background(ios_previous_transparent_background);
         ios = nullptr;
         return false;
     }
@@ -849,6 +847,26 @@ void ClientVideo::stop() {
 
 void ClientVideo::_process(double delta) {
     if (ios) {
+        const PackedByteArray bytes = ios->call("get_frame");
+        if (bytes.size() > 0) {
+            const int width = int(ios->call("get_frame_width"));
+            const int height = int(ios->call("get_frame_height"));
+            Ref<Image> image = Image::create_from_data(width, height, false, Image::FORMAT_RGBA8, bytes);
+            if (image.is_valid()) {
+                if (!planes[0].is_valid()) planes[0] = ImageTexture::create_from_image(image);
+                else planes[0]->update(image);
+                if (!picture) {
+                    picture = memnew(TextureRect);
+                    picture->set_name("VideoPicture");
+                    picture->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+                    picture->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+                    picture->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+                    picture->set_texture(planes[0]);
+                    add_child(picture);
+                    picture->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+                }
+            }
+        }
         if (!loop && bool(ios->call("is_finished"))) finished = true;
         return;
     }
