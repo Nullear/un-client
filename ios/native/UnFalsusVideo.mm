@@ -5,6 +5,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
 #import <UIKit/UIKit.h>
+#import <QuartzCore/CAEAGLLayer.h>
+#import <QuartzCore/CAMetalLayer.h>
 #include <cstring>
 #include <netinet/in.h>
 
@@ -37,7 +39,9 @@ class UnFalsusVideo : public Object {
 
     static UIView *find_render_view(UIView *root) {
         NSString *layer_name = NSStringFromClass(root.layer.class);
-        if ([layer_name containsString:@"Metal"] || [layer_name containsString:@"EAGL"]) return root;
+        if ([root.layer isKindOfClass:[CAEAGLLayer class]] ||
+                [root.layer isKindOfClass:[CAMetalLayer class]] ||
+                [layer_name containsString:@"OpenGLLayer"]) return root;
         for (UIView *child in root.subviews) {
             UIView *found = find_render_view(child);
             if (found) return found;
@@ -109,6 +113,8 @@ public:
             layer.player = player;
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
             [render_view.superview insertSubview:view belowSubview:render_view];
+            NSLog(@"[UnFalsusVideo] playing %@ behind %@ (%@)", path,
+                NSStringFromClass(render_view.class), NSStringFromClass(render_view.layer.class));
             if (white_view) [window bringSubviewToFront:white_view];
 
             end_observer = [[NSNotificationCenter defaultCenter]
