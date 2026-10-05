@@ -204,8 +204,12 @@ public:
             AVPlayerLayer *layer = (AVPlayerLayer *)view.layer;
             layer.player = player;
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-            [render_view.superview insertSubview:view belowSubview:render_view];
-            debug_log([NSString stringWithFormat:@"playing behind view=%@ layer=%@ frame=%@ opaque=%@",
+            // GodotView uses a CALayer-backed renderer that still composites an
+            // opaque surface even after its UIView opacity is cleared. Put the
+            // AVPlayer surface above it; stop_on_main removes it before the
+            // login and download overlays are shown.
+            [render_view.superview insertSubview:view aboveSubview:render_view];
+            debug_log([NSString stringWithFormat:@"playing above view=%@ layer=%@ frame=%@ opaque=%@",
                 NSStringFromClass(render_view.class), NSStringFromClass(render_view.layer.class),
                 NSStringFromCGRect(render_view.frame), render_view.opaque ? @"YES" : @"NO"]);
             if (white_view) [window bringSubviewToFront:white_view];
