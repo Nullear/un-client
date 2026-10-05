@@ -34,6 +34,7 @@ class ClientVideo : public Control {
     Object *decoder = nullptr;
     Ref<RefCounted> decoder_ref;
     Object *ios = nullptr;
+    bool ios_previous_transparent_background = false;
     void *hw = nullptr;
     TextureRect *picture = nullptr;
     Ref<ShaderMaterial> material;

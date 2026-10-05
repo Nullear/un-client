@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/shader.hpp>
+#include <godot_cpp/classes/viewport.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -677,7 +678,12 @@ bool ClientVideo::play(const String &resource, bool repeat, bool paused) {
             return false;
         }
         ios = Engine::get_singleton()->get_singleton("UnFalsusVideo");
-        return bool(ios->call("play", path, loop));
+        ios_previous_transparent_background = get_viewport()->has_transparent_background();
+        get_viewport()->set_transparent_background(true);
+        if (bool(ios->call("play", path, loop))) return true;
+        get_viewport()->set_transparent_background(ios_previous_transparent_background);
+        ios = nullptr;
+        return false;
     }
 
 #if defined(__ANDROID__)
@@ -819,6 +825,7 @@ void ClientVideo::stop() {
     stop_hw();
     if (ios) {
         ios->call("stop");
+        if (get_viewport()) get_viewport()->set_transparent_background(ios_previous_transparent_background);
         ios = nullptr;
     }
     if (decoder) {

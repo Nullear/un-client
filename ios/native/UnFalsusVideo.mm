@@ -30,6 +30,20 @@ class UnFalsusVideo : public Object {
     AVPlayer *player = nil;
     id end_observer = nil;
     std::atomic_bool finished = false;
+    UIView *render_view = nil;
+    BOOL render_was_opaque = YES;
+    BOOL layer_was_opaque = YES;
+    UIColor *render_background = nil;
+
+    static UIView *find_render_view(UIView *root) {
+        NSString *layer_name = NSStringFromClass(root.layer.class);
+        if ([layer_name containsString:@"Metal"] || [layer_name containsString:@"EAGL"]) return root;
+        for (UIView *child in root.subviews) {
+            UIView *found = find_render_view(child);
+            if (found) return found;
+        }
+        return nil;
+    }
 
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("play", "absolute_path", "loop"), &UnFalsusVideo::play);
@@ -53,6 +67,13 @@ class UnFalsusVideo : public Object {
         title_view = nil;
         [view removeFromSuperview];
         view = nil;
+        if (render_view) {
+            render_view.opaque = render_was_opaque;
+            render_view.layer.opaque = layer_was_opaque;
+            render_view.backgroundColor = render_background;
+            render_view = nil;
+            render_background = nil;
+        }
     }
 
 public:
@@ -66,7 +87,19 @@ public:
             if (!window) window = UIApplication.sharedApplication.windows.firstObject;
             if (!window) { finished.store(true); return; }
 
-            view = [[UFVideoView alloc] initWithFrame:window.bounds];
+            render_view = find_render_view(window.rootViewController.view);
+            if (!render_view || !render_view.superview) {
+                NSLog(@"[UnFalsusVideo] Godot render view is unavailable");
+                finished.store(true);
+                return;
+            }
+            render_was_opaque = render_view.opaque;
+            layer_was_opaque = render_view.layer.opaque;
+            render_background = render_view.backgroundColor;
+            render_view.opaque = NO;
+            render_view.layer.opaque = NO;
+            render_view.backgroundColor = UIColor.clearColor;
+            view = [[UFVideoView alloc] initWithFrame:render_view.frame];
             view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             view.userInteractionEnabled = NO;
             view.backgroundColor = UIColor.blackColor;
@@ -75,7 +108,7 @@ public:
             AVPlayerLayer *layer = (AVPlayerLayer *)view.layer;
             layer.player = player;
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-            [window addSubview:view];
+            [render_view.superview insertSubview:view belowSubview:render_view];
             if (white_view) [window bringSubviewToFront:white_view];
 
             end_observer = [[NSNotificationCenter defaultCenter]
