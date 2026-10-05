@@ -18,6 +18,8 @@ for parent in document.iter():
             if view_id:
                 removed_ids.add(view_id)
             parent.remove(child)
+        elif child.tag == "image" and child.get("name") == "SplashImage":
+            parent.remove(child)
 
 for parent in document.iter():
     for child in list(parent):
