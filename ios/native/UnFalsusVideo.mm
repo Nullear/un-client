@@ -100,6 +100,7 @@ class UnFalsusVideo : public Object {
     BOOL render_was_opaque = YES;
     BOOL layer_was_opaque = YES;
     UIColor *render_background = nil;
+    CGColorRef render_layer_background = nil;
 
     static UIView *find_render_view(UIView *root) {
         NSString *layer_name = NSStringFromClass(root.layer.class);
@@ -164,8 +165,13 @@ class UnFalsusVideo : public Object {
             render_view.opaque = render_was_opaque;
             render_view.layer.opaque = layer_was_opaque;
             render_view.backgroundColor = render_background;
+            render_view.layer.backgroundColor = render_layer_background;
             render_view = nil;
             render_background = nil;
+            if (render_layer_background) {
+                CGColorRelease(render_layer_background);
+                render_layer_background = nil;
+            }
         }
     }
 
@@ -192,9 +198,11 @@ public:
             render_was_opaque = render_view.opaque;
             layer_was_opaque = render_view.layer.opaque;
             render_background = render_view.backgroundColor;
+            render_layer_background = CGColorRetain(render_view.layer.backgroundColor);
             render_view.opaque = NO;
             render_view.layer.opaque = NO;
             render_view.backgroundColor = UIColor.clearColor;
+            render_view.layer.backgroundColor = UIColor.clearColor.CGColor;
             view = [[UFVideoView alloc] initWithFrame:render_view.frame];
             view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             view.userInteractionEnabled = NO;
@@ -204,12 +212,8 @@ public:
             AVPlayerLayer *layer = (AVPlayerLayer *)view.layer;
             layer.player = player;
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-            // GodotView uses a CALayer-backed renderer that still composites an
-            // opaque surface even after its UIView opacity is cleared. Put the
-            // AVPlayer surface above it; stop_on_main removes it before the
-            // login and download overlays are shown.
-            [render_view.superview insertSubview:view aboveSubview:render_view];
-            debug_log([NSString stringWithFormat:@"playing above view=%@ layer=%@ frame=%@ opaque=%@",
+            [render_view.superview insertSubview:view belowSubview:render_view];
+            debug_log([NSString stringWithFormat:@"playing below view=%@ layer=%@ frame=%@ opaque=%@ layer_bg=clear",
                 NSStringFromClass(render_view.class), NSStringFromClass(render_view.layer.class),
                 NSStringFromCGRect(render_view.frame), render_view.opaque ? @"YES" : @"NO"]);
             if (white_view) [window bringSubviewToFront:white_view];
