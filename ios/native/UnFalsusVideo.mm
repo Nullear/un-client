@@ -41,6 +41,8 @@ class UnFalsusVideo : public Object {
     }
 
     void stop_on_main() {
+        [view setHidden:YES];
+        [white_view setHidden:YES];
         if (end_observer) {
             [[NSNotificationCenter defaultCenter] removeObserver:end_observer];
             end_observer = nil;
@@ -135,7 +137,7 @@ public:
     void stop() {
         finished.store(false);
         if ([NSThread isMainThread]) stop_on_main();
-        else dispatch_async(dispatch_get_main_queue(), ^{ stop_on_main(); });
+        else dispatch_sync(dispatch_get_main_queue(), ^{ stop_on_main(); });
     }
 
     bool is_finished() const { return finished.load(); }
