@@ -259,16 +259,6 @@ void ClientScreen::_ready() {
     if (scene_kind == 0) build_startup();
     else if (scene_kind == 1) build_menu();
     else build_konzetsu();
-    if (scene_kind == 0 && OS::get_singleton()->get_name() == "iOS") {
-        // iOS skips the optional videos and proceeds directly to the menu.
-        if (Node *black = stage->find_child("StartupBlack", false, false))
-            if (auto *item = Object::cast_to<Control>(black)) item->hide();
-        startup_state = 3;
-        clock = 0;
-        title_time = 0;
-        content_ready = false;
-        startup_start_content_check();
-    }
     if (scene_kind == 1 || scene_kind == 2) ClientTransition::get_or_create(get_tree());
     layout();
     if (scene_kind == 1) prepare_menu_dialogs();
@@ -600,12 +590,6 @@ void ClientScreen::build_startup() {
     startup_base_url = arcapi::resolve_base_url(startup_base_url);
     if (!startup_base_url.begins_with("http://") && !startup_base_url.begins_with("https://"))
         UtilityFunctions::push_error("Startup Arcapi host could not be resolved");
-    if (OS::get_singleton()->get_name() == "iOS") {
-        startup_media_prepared = true;
-        startup_preload_index = 6;
-        ClientTransition::get_or_create(get_tree());
-        return;
-    }
     video = memnew(ClientVideo);
     video->set_name("IntroVideo");
     video->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
@@ -1071,12 +1055,6 @@ void ClientScreen::_process(double delta) {
             }
         } else if (startup_state == 3) {
             title_time += delta;
-            if (OS::get_singleton()->get_name() == "iOS" && content_ready && !switching
-                    && title_time >= .25) {
-                switching = true;
-                ClientTransition::get_or_create(get_tree())->switch_to("res://Godot/Scenes/MainMenu.tscn");
-                return;
-            }
             if (flash && clock <= 47. / 60.) {
                 const float peak = native_mode == 1 ? 1.f : 124.f / 255.f;
                 const float alpha = clock < 7. / 60. ? float(clock / (7. / 60.))
