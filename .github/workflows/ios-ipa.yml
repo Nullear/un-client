@@ -46,6 +46,7 @@ jobs:
           python3 -m pip install --user --break-system-packages scons
 
       - name: Build godot-cpp for the iOS extension
+        if: steps.godot-cpp-cache.outputs.cache-hit != 'true'
         run: |
           if [ ! -d "$RUNNER_TEMP/godot-cpp" ]; then
             git clone --depth 1 --branch "godot-${GODOT_TAG}" https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
