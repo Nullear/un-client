@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Identify Apple toolchain
+        id: apple-toolchain
+        run: echo "fingerprint=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
       - name: Cache Godot source and iOS build
         id: godot-cache
         uses: actions/cache@v4
@@ -25,7 +29,16 @@ jobs:
           path: |
             ${{ runner.temp }}/godot
             ${{ runner.temp }}/godot-ios-build
-          key: godot-ios-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/workflows/ios-ipa.yml') }}
+          key: godot-ios-${{ runner.os }}-${{ env.GODOT_VERSION }}-arm64-release-v2-${{ steps.apple-toolchain.outputs.fingerprint }}
+          restore-keys: |
+            godot-ios-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
+      - name: Cache godot-cpp source and iOS/macOS builds
+        id: godot-cpp-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/godot-cpp
+          key: godot-cpp-${{ runner.os }}-${{ env.GODOT_VERSION }}-arm64-release-v1-${{ steps.apple-toolchain.outputs.fingerprint }}
 
       - name: Prepare toolchain
         run: |
@@ -35,7 +48,7 @@ jobs:
       - name: Build godot-cpp for the iOS extension
         run: |
           if [ ! -d "$RUNNER_TEMP/godot-cpp" ]; then
-            git clone --depth 1 --branch godot-4.4.1-stable https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
+            git clone --depth 1 --branch "godot-${GODOT_TAG}" https://github.com/godotengine/godot-cpp.git "$RUNNER_TEMP/godot-cpp"
           fi
           cd "$RUNNER_TEMP/godot-cpp"
           python3 -m SCons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
@@ -43,7 +56,9 @@ jobs:
       - name: Fetch and build Godot iOS template
         if: steps.godot-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "$GODOT_TAG" https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot"
+          if [ ! -d "$RUNNER_TEMP/godot" ]; then
+            git clone --depth 1 --branch "$GODOT_TAG" https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot"
+          fi
           cd "$RUNNER_TEMP/godot"
           python3 -m SCons platform=ios target=template_release arch=arm64 -j "$(sysctl -n hw.logicalcpu)"
            mkdir -p "$RUNNER_TEMP/godot-ios-build"
