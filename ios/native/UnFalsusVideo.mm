@@ -33,6 +33,11 @@ extern "C" void unregister_unfalsus_video_types_c();
 @end
 
 @implementation UFDebugOverlay
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return hit == self ? nil : hit;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (!self) return nil;
