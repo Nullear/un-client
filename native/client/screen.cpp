@@ -511,11 +511,18 @@ void ClientScreen::layout() {
     }
     cover_window(stage, extra_x, extra_y);
     if (startup_canvas && startup_activity && !startup_login_panel) {
-        const bool full_canvas = size.y > 0 && size.x / size.y <= W / H;
-        const float canvas_h = full_canvas ? STARTUP_VIRTUAL_H : H;
-        const float bottom_margin = H - 902.f - 146.f;
-        startup_activity->set_position(Vector2(startup_activity->get_position().x,
-            canvas_h - 146.f - bottom_margin));
+        // Port StartupConfig.activityIconPose() from the Cocos viewport into
+        // the scaled Godot stage, then into the icon's actual parent space.
+        const float cocos_fit = std::min(size.x / (W / 1.5f), size.y / (H / 1.5f));
+        const Vector2 screen_point(size.x - 47.f * cocos_fit, size.y - 70.f * cocos_fit);
+        const Vector2 stage_point = (screen_point - stage->get_position()) / scale;
+        Vector2 parent_point = stage_point;
+        if (Control *parent = Object::cast_to<Control>(startup_activity->get_parent()); parent && parent != stage) {
+            const Vector2 parent_scale = parent->get_scale();
+            parent_point = (stage_point - parent->get_position()) / Vector2(
+                std::max(.001f, parent_scale.x), std::max(.001f, parent_scale.y));
+        }
+        startup_activity->set_position(parent_point - startup_activity->get_size() * .5f);
     }
     if (startup_canvas && title_art) {
         if (!title_art->has_meta("startup_home_pos")) title_art->set_meta("startup_home_pos", title_art->get_position());
