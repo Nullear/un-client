@@ -443,7 +443,9 @@ void ClientScreen::layout() {
     const float logical_h = startup_canvas ? STARTUP_VIRTUAL_H : H;
     // Startup is laid out on a 4:3 virtual canvas. A 16:9 display simply
     // clips its lower 360 logical pixels instead of rescaling the page.
-    float scale = std::min(size.x / W, size.y / logical_h);
+    const float scale_height = startup_canvas && size.y > 0 && size.x / size.y <= W / H
+        ? logical_h : H;
+    float scale = std::min(size.x / W, size.y / scale_height);
     if (scale <= 0) return;
     stage->set_scale(Vector2(scale, scale));
     stage->set_size(Vector2(W, logical_h));
@@ -509,6 +511,11 @@ void ClientScreen::layout() {
     }
     cover_window(stage, extra_x, extra_y);
     if (startup_activity && !startup_login_panel) place_wide(startup_activity, shift, 0);
+    if (startup_canvas && title_art) {
+        if (!title_art->has_meta("startup_home_pos")) title_art->set_meta("startup_home_pos", title_art->get_position());
+        const Vector2 home = title_art->get_meta("startup_home_pos");
+        title_art->set_position(home + Vector2(0, extra_y * .5f));
+    }
     if (video) attach_startup_video(this, video);
     if (title_video) attach_startup_video(this, title_video);
 }

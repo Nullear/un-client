@@ -1580,6 +1580,14 @@ void ClientScreen::startup_set_busy(bool busy) {
             layout();
         }
     }
+    if (startup_activity && (startup_activity->get_parent() == stage
+            || startup_activity->get_parent() == startup_overlay)) {
+        if (!startup_activity->has_meta("startup_home_pos"))
+            startup_activity->set_meta("startup_home_pos", startup_activity->get_position());
+        const Vector2 home = startup_activity->get_meta("startup_home_pos");
+        const float extra_y = std::max(0.f, get_size().y / std::max(.001f, stage->get_scale().y) - H);
+        startup_activity->set_position(home + Vector2(0, extra_y * .5f));
+    }
     if (startup_activity && startup_login_panel) {
         if (busy) {
             startup_activity_animation.begin(startup_activity);
