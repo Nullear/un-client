@@ -1572,23 +1572,19 @@ void ClientScreen::startup_set_busy(bool busy) {
             activity->set_stretch_mode(TextureRect::STRETCH_SCALE);
             activity->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
             activity->set_size(Vector2(97, 146));
-            const float canvas_h = login ? STARTUP_CANVAS_H : H;
-            activity->set_position(login ? Vector2((W - 97) / 2, (canvas_h - 146) / 2)
-                : Vector2(W - 119, canvas_h - 251));
+            const bool full_canvas = get_size().y > 0 && get_size().x / get_size().y <= W / H;
+            const float canvas_h = login ? H : (full_canvas ? STARTUP_CANVAS_H : H);
+            const Vector2 activity_position = login
+                ? Vector2((W - 97) / 2, (H - 146) / 2)
+                : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146);
+            activity->set_position(login ? activity_position
+                : Vector2(activity_position.x, canvas_h - 146 - (H - 902.f - 146.f)));
             activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));
             startup_activity = activity;
             layout();
         }
-    }
-    if (startup_activity && (startup_activity->get_parent() == stage
-            || startup_activity->get_parent() == startup_overlay)) {
-        const bool login_activity = startup_login_panel != nullptr;
-        const float canvas_h = login_activity ? STARTUP_CANVAS_H : H;
-        startup_activity->set_position(login_activity
-            ? Vector2((W - 97) / 2, (canvas_h - 146) / 2)
-            : Vector2(W - 119, canvas_h - 251));
     }
     if (startup_activity && startup_login_panel) {
         if (busy) {
