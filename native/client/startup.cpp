@@ -1586,7 +1586,7 @@ void ClientScreen::startup_set_busy(bool busy) {
             startup_activity->set_meta("startup_home_pos", startup_activity->get_position());
         const Vector2 home = startup_activity->get_meta("startup_home_pos");
         const float extra_y = std::max(0.f, get_size().y / std::max(.001f, stage->get_scale().y) - H);
-        const bool anchored_to_bottom = startup_activity->get_parent() == stage && !startup_login_panel;
+        const bool anchored_to_bottom = startup_activity->get_parent() == stage;
         startup_activity->set_position(home + Vector2(0, extra_y * (anchored_to_bottom ? 1.f : .5f)));
     }
     if (startup_activity && startup_login_panel) {
