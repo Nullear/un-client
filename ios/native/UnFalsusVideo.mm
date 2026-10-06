@@ -1,7 +1,7 @@
 #include "core/config/engine.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
-#include "core/variant/packed_byte_array.h"
+#include "core/variant/variant.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
