@@ -1578,7 +1578,8 @@ void ClientScreen::startup_set_busy(bool busy) {
                 ? Vector2((W - 97) / 2, (H - 146) / 2)
                 : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146);
             activity->set_position(login ? activity_position
-                : Vector2(activity_position.x, canvas_h - 146 - (H - 902.f - 146.f)));
+                : Vector2(activity_position.x - 97.f / 2,
+                    canvas_h - 146 - (H - 902.f - 146.f)));
             activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));
