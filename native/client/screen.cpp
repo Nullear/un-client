@@ -443,7 +443,7 @@ void ClientScreen::layout() {
     const float logical_h = startup_canvas ? STARTUP_VIRTUAL_H : H;
     // Startup is laid out on a 4:3 virtual canvas. A 16:9 display simply
     // clips its lower 360 logical pixels instead of rescaling the page.
-    float scale = std::min(size.x / W, size.y / H);
+    float scale = std::min(size.x / W, size.y / logical_h);
     if (scale <= 0) return;
     stage->set_scale(Vector2(scale, scale));
     stage->set_size(Vector2(W, logical_h));

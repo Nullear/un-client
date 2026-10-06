@@ -916,7 +916,9 @@ void ClientVideo::_process(double delta) {
 }
 
 void ClientVideo::set_native_white(float alpha) {
-    if (ios) ios->call("set_white", std::clamp(alpha, 0.f, 1.f));
+    // Startup white flash is drawn by the Godot WhiteFlash control. A native
+    // UIWindow overlay has different safe-area and virtual-canvas sizing.
+    (void)alpha;
 }
 
 void ClientVideo::set_native_title(const String &resource) {
