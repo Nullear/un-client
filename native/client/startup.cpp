@@ -1563,7 +1563,7 @@ void ClientScreen::startup_set_busy(bool busy) {
         Ref<Texture2D> icon = tex("startup/activity_icon.png");
         if (icon.is_valid()) {
             const bool login = startup_login_panel != nullptr;
-            const float rest = login ? 1.f : .75f;
+            const float rest = 1.f;
             auto *activity = memnew(TextureRect);
             activity->set_name("ActivityIcon");
             host->add_child(activity);
@@ -1577,9 +1577,16 @@ void ClientScreen::startup_set_busy(bool busy) {
             const Vector2 activity_position = login
                 ? Vector2((W - 97) / 2, (H - 146) / 2)
                 : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146);
-            activity->set_position(login ? activity_position
-                : Vector2(activity_position.x - 97.f / 2,
+            if (login) {
+                activity->set_position(activity_position);
+            } else {
+                activity->set_anchor(SIDE_LEFT, 1.f);
+                activity->set_anchor(SIDE_RIGHT, 1.f);
+                activity->set_offset(SIDE_LEFT, -119.f);
+                activity->set_offset(SIDE_RIGHT, -22.f);
+                activity->set_position(Vector2(W - 119.f,
                     canvas_h - 146 - (H - 902.f - 146.f)));
+            }
             activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));
@@ -1724,10 +1731,10 @@ void ClientScreen::startup_animate(double delta) {
         startup_activity->set_modulate(Color(1, 1, 1, alpha));
         startup_activity->set_visible(alpha > .001f);
         if (!startup_busy) {
-            startup_activity->set_scale(Vector2(.75f, .75f));
+            startup_activity->set_scale(Vector2(1.f, 1.f));
         } else {
             startup_activity->set_pivot_offset(startup_activity->get_size() / 2);
-            const float rest = .75f;
+            const float rest = 1.f;
             const float squash = rest * (.01f / .5f);
             const float phase = float(std::fmod(startup_busy_seconds, 1.0));
             const float u = phase < .5f ? phase / .5f : (phase - .5f) / .5f;

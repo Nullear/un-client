@@ -510,15 +510,12 @@ void ClientScreen::layout() {
                 filter_characters(search->get_text());
     }
     cover_window(stage, extra_x, extra_y);
-    if (startup_activity && !startup_login_panel) place_wide(startup_activity, shift, 0);
     if (startup_canvas && startup_activity && !startup_login_panel) {
         const bool full_canvas = size.y > 0 && size.x / size.y <= W / H;
         const float canvas_h = full_canvas ? STARTUP_VIRTUAL_H : H;
         const float bottom_margin = H - 902.f - 146.f;
-        const Vector2 activity_pos = Vector2(startup_activity->get_position().x,
-            canvas_h - 146.f - bottom_margin);
-        startup_activity->set_position(activity_pos);
-        startup_activity->set_meta("home_pos", activity_pos);
+        startup_activity->set_position(Vector2(startup_activity->get_position().x,
+            canvas_h - 146.f - bottom_margin));
     }
     if (startup_canvas && title_art) {
         if (!title_art->has_meta("startup_home_pos")) title_art->set_meta("startup_home_pos", title_art->get_position());
