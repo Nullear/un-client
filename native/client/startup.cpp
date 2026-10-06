@@ -241,7 +241,9 @@ static Array manifest_file(const String &file) {
 }
 
 static void hide_ios_startup_video(ClientVideo *video) {
-    if (video && OS::get_singleton()->get_name() == "iOS") video->stop();
+    // iOS video is now a Godot TextureRect, so startup overlays can render
+    // above it without stopping the title background.
+    (void)video;
 }
 
 static void remove_asset(const String &path) {
