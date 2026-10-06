@@ -1576,15 +1576,14 @@ void ClientScreen::startup_set_busy(bool busy) {
             const float canvas_h = login ? H : (full_canvas ? STARTUP_CANVAS_H : H);
             const Vector2 activity_position = login
                 ? Vector2((W - 97) / 2, (H - 146) / 2)
-                : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146, 1.f, .5f);
+                : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146);
             if (login) {
                 activity->set_position(activity_position);
             } else {
-                const float scale_anchor_compensation = 97.f * .5f * (1.f - rest);
-                activity->set_position(Vector2(activity_position.x + scale_anchor_compensation,
+                activity->set_position(Vector2(activity_position.x,
                     canvas_h - 146 - (H - 902.f - 146.f)));
             }
-            activity->set_pivot_offset(login ? Vector2(97, 146) / 2 : Vector2(97, 146 * .5f));
+            activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));
             startup_activity = activity;
@@ -1730,7 +1729,7 @@ void ClientScreen::startup_animate(double delta) {
         if (!startup_busy) {
             startup_activity->set_scale(Vector2(.67f, .67f));
         } else {
-            startup_activity->set_pivot_offset(startup_activity->get_size() * Vector2(1.f, .5f));
+            startup_activity->set_pivot_offset(startup_activity->get_size() / 2);
             const float rest = .67f;
             const float squash = rest * (.01f / .5f);
             const float phase = float(std::fmod(startup_busy_seconds, 1.0));
