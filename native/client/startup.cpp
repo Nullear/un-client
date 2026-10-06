@@ -55,6 +55,7 @@ using namespace godot;
 
 namespace {
 static constexpr float W = 1920, H = 1080;
+static constexpr float STARTUP_CANVAS_H = 1440;
 static constexpr const char *IMAGE = "res://assets/resources/img/";
 static constexpr const char *ASSETS = "user://assets";
 enum RequestKind { NONE = 0, AUTH_REFRESH, LOGIN, MANIFEST, DOWNLOAD };
@@ -1571,8 +1572,9 @@ void ClientScreen::startup_set_busy(bool busy) {
             activity->set_stretch_mode(TextureRect::STRETCH_SCALE);
             activity->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
             activity->set_size(Vector2(97, 146));
-            activity->set_position(login ? Vector2((W - 97) / 2, (H - 146) / 2)
-                : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146));
+            const float canvas_h = login ? STARTUP_CANVAS_H : H;
+            activity->set_position(login ? Vector2((W - 97) / 2, (canvas_h - 146) / 2)
+                : Vector2(W - 119, canvas_h - 251));
             activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));
@@ -1582,12 +1584,11 @@ void ClientScreen::startup_set_busy(bool busy) {
     }
     if (startup_activity && (startup_activity->get_parent() == stage
             || startup_activity->get_parent() == startup_overlay)) {
-        if (!startup_activity->has_meta("startup_home_pos"))
-            startup_activity->set_meta("startup_home_pos", startup_activity->get_position());
-        const Vector2 home = startup_activity->get_meta("startup_home_pos");
-        const float extra_y = std::max(0.f, get_size().y / std::max(.001f, stage->get_scale().y) - H);
-        const bool anchored_to_bottom = startup_activity->get_parent() == stage;
-        startup_activity->set_position(home + Vector2(0, extra_y * (anchored_to_bottom ? 1.f : .5f)));
+        const bool login_activity = startup_login_panel != nullptr;
+        const float canvas_h = login_activity ? STARTUP_CANVAS_H : H;
+        startup_activity->set_position(login_activity
+            ? Vector2((W - 97) / 2, (canvas_h - 146) / 2)
+            : Vector2(W - 119, canvas_h - 251));
     }
     if (startup_activity && startup_login_panel) {
         if (busy) {
