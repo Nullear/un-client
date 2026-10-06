@@ -1580,7 +1580,8 @@ void ClientScreen::startup_set_busy(bool busy) {
             if (login) {
                 activity->set_position(activity_position);
             } else {
-                activity->set_position(Vector2(activity_position.x,
+                const float scale_anchor_compensation = 97.f * .5f * (1.f - rest);
+                activity->set_position(Vector2(activity_position.x + scale_anchor_compensation,
                     canvas_h - 146 - (H - 902.f - 146.f)));
             }
             activity->set_pivot_offset(login ? Vector2(97, 146) / 2 : Vector2(97, 146 * .5f));
