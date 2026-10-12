@@ -755,12 +755,16 @@ PackedStringArray content::songs_with_rating_at_least(int rating) {
             if (eligible) return;
             if (value.get_type() == Variant::DICTIONARY) {
                 const Dictionary dict = value;
-                for (const Variant &key : dict.keys()) {
+                const Array keys = dict.keys();
+                for (int key_index = 0; key_index < keys.size(); ++key_index) {
+                    const Variant key = keys[key_index];
                     const String key_name = String(key).to_lower();
                     const Variant child = dict[key];
                     if (key_name == "rating" || key_name == "ratings" || key_name == "constant") {
                         if (child.get_type() == Variant::ARRAY) {
-                            for (const Variant &entry : Array(child)) scan_rating(entry);
+                            const Array entries = child;
+                            for (int entry_index = 0; entry_index < entries.size(); ++entry_index)
+                                scan_rating(entries[entry_index]);
                         } else if (child.get_type() == Variant::STRING) {
                             eligible = String(child).to_float() >= rating;
                         } else if (child.get_type() == Variant::INT || child.get_type() == Variant::FLOAT) {
@@ -772,7 +776,9 @@ PackedStringArray content::songs_with_rating_at_least(int rating) {
                     if (eligible) return;
                 }
             } else if (value.get_type() == Variant::ARRAY) {
-                for (const Variant &entry : Array(value)) scan_rating(entry);
+                const Array entries = value;
+                for (int entry_index = 0; entry_index < entries.size(); ++entry_index)
+                    scan_rating(entries[entry_index]);
             }
         };
         scan_rating(song);
