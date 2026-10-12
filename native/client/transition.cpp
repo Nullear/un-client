@@ -77,7 +77,11 @@ void ClientTransition::_process(double delta) {
     material->set_shader_parameter("aspect", size.y > 0 ? size.x / size.y : 1920.0 / 1080.0);
     if (state == 1 || state == 3) {
         elapsed = std::min(0.85, elapsed + delta);
-        const float t = float(elapsed / 0.85);
+        const float raw_t = float(elapsed / 0.85);
+        // Ease-in-out cubic for smooth acceleration/deceleration
+        const float t = raw_t < 0.5 
+            ? 4.0f * raw_t * raw_t * raw_t 
+            : 1.0f - std::pow(-2.0f * raw_t + 2.0f, 3.0f) / 2.0f;
         material->set_shader_parameter("progress", t);
         if (state == 1 && !scene_preparation_attempted && elapsed >= 0.85) {
             scene_preparation_attempted = true;

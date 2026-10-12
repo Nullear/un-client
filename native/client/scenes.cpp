@@ -4,6 +4,7 @@
 #include "ui_font.hpp"
 
 #include <godot_cpp/classes/button.hpp>
+#include <godot_cpp/classes/callback_tweener.hpp>
 #include <godot_cpp/classes/http_client.hpp>
 #include <godot_cpp/classes/config_file.hpp>
 #include <godot_cpp/classes/json.hpp>
@@ -35,6 +36,42 @@ using namespace godot;
 namespace {
 static constexpr float W = 1920, H = 1080;
 static constexpr const char *ROOT = "res://assets/resources/img/";
+
+static int64_t task_integer(const Dictionary &task, const Dictionary &state, const char *key, int64_t fallback = 0) {
+    const Variant value = task.has(key) ? task[key] : state.get(key, Variant());
+    return value.get_type() == Variant::NIL ? fallback : int64_t(value);
+}
+
+static bool konzetsu_daily_task_complete(const Dictionary &task) {
+    const Dictionary state = task.get("state", Dictionary());
+    if (bool(state.get("done", false))) return true;
+    const String id = task.get("id", "");
+    const int64_t current = task_integer(task, state, "current");
+    const Dictionary req = task.get("req", Dictionary());
+    const int64_t amount = task_integer(task, state, "amount",
+        req.has("amount") ? int64_t(req["amount"]) : 0);
+    const int64_t progress = task_integer(task, state, "progress",
+        req.has("value") ? int64_t(req["value"]) : 0);
+    if (id == "target_chart_perfect_or_clear_twice" || id == "target_chart_link_or_clear_twice"
+            || id == "any_song_perfect_or_clear_twice") return current == 2;
+    if (id == "target_chart_dual_difficulty_clear") return current == 3;
+    if (id == "shiny_pure_total" || id == "daily_near_total" || id == "daily_exact_total"
+            || id == "daily_break_total") return amount > 0 && current >= amount;
+    if (id == "target_chart_score" || id == "target_chart_judgment_limit"
+            || id == "daily_unplayed_song_clear") return current == 1;
+    if (id == "daily_full_link_total" || id == "high_const_clear_total" || id == "daily_score_total")
+        return progress > 0 && current >= progress;
+    return false;
+}
+
+static bool konzetsu_all_daily_tasks_complete(const Array &tasks) {
+    if (tasks.size() < 5) return false;
+    for (int i = 0; i < 5; ++i) {
+        if (tasks[i].get_type() != Variant::DICTIONARY
+                || !konzetsu_daily_task_complete(Dictionary(tasks[i]))) return false;
+    }
+    return true;
+}
 
 static Vector2 at(float x, float y, float w, float h, float ax = .5f, float ay = .5f) {
     return Vector2(W / 2 + x - w * ax, H / 2 - y - h * (1 - ay));
@@ -283,11 +320,52 @@ void ClientScreen::build_menu() {
     menu_http->set_use_threads(true);
     add_child(menu_http);
     menu_http->connect("request_completed", Callable(this, "menu_http_completed"));
+    konzetsu_http = memnew(HTTPRequest);
+    konzetsu_http->set_name("KonzetsuTasksHTTP");
+    konzetsu_http->set_timeout(15);
+    konzetsu_http->set_use_threads(true);
+    add_child(konzetsu_http);
+    konzetsu_http->connect("request_completed", Callable(this, "konzetsu_tasks_completed"));
+    konzetsu_task_busy = memnew(Control);
+    konzetsu_task_busy->set_name("KonzetsuTaskBusy");
+    stage->add_child(konzetsu_task_busy);
+    konzetsu_task_busy->set_size(Vector2(W, H));
+    konzetsu_task_busy->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+    auto *task_dim = memnew(ColorRect);
+    task_dim->set_name("Dimmer");
+    konzetsu_task_busy->add_child(task_dim);
+    task_dim->set_color(Color(0, 0, 0, 1));
+    task_dim->set_size(Vector2(W, H));
+    task_dim->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+    auto *task_icon = place(konzetsu_task_busy, "ActivityIcon", "startup/activity_icon.png", 0, 0, 97, 146);
+    if (task_icon) task_icon->set_pivot_offset(task_icon->get_size() * .5f);
+    konzetsu_task_busy->hide();
     menu_fetch_user();
 }
 
 void ClientScreen::build_konzetsu() {
     const float scale = .67f * 1.5f;
+    konzetsu_preload_images.clear();
+    konzetsu_preload_image_index = 0;
+    // Preload task images (user:// paths loaded with content::image)
+    for (int i = 0; i < konzetsu_tasks.size(); ++i) {
+        if (konzetsu_tasks[i].get_type() != Variant::DICTIONARY) continue;
+        const Dictionary task = konzetsu_tasks[i];
+        const String task_id = task.get("id", "");
+        String image_path;
+        if (task_id == "shiny_pure_total") image_path = "img/hit_max.png";
+        else if (task_id == "daily_near_total") image_path = "img/hit_far.png";
+        else if (task_id == "daily_exact_total") image_path = "img/hit_pure.png";
+        else if (task_id == "daily_break_total") image_path = "img/hit_lost.png";
+        else if (task_id == "daily_full_link_total") image_path = "img/clear_fl.png";
+        else if (task_id == "daily_unplayed_song_clear") image_path = "img/new_badge.png";
+        else if (task_id == "any_song_perfect_or_clear_twice") image_path = "img/clear_pd.png";
+        else if (!String(task.get("song", "")).is_empty())
+            image_path = String("songs/dl_") + String(task.get("song", "")) + "/1080_base.jpg";
+        if (!image_path.is_empty() && std::find(konzetsu_preload_images.begin(),
+                konzetsu_preload_images.end(), image_path) == konzetsu_preload_images.end())
+            konzetsu_preload_images.push_back(image_path);
+    }
     auto *hub = memnew(Control);
     hub->set_name("Hub");
     hub->set_size(Vector2(W, H));
@@ -337,12 +415,49 @@ void ClientScreen::build_konzetsu() {
     const Vector2 positions[] = {{-220, 280}, {220, 280}, {-416, 0}, {416, 0}, {-220, -280}, {220, -280}};
     for (int i = 0; i < 6; ++i) {
         const String prefix = "HubNode" + String::num_int64(i + 1);
+        const float x = positions[i].x * 1.5f;
+        const float y = positions[i].y * 1.5f;
+        add_hub(prefix + String("Swirl"), "node/node-swirl-inactive.png", x, y);
         add_hub(prefix + String("Panel"), "node/node-panel.png",
             positions[i].x * 1.5f, positions[i].y * 1.5f);
+        Control *panel = art[(prefix + String("Panel")).utf8().get_data()];
+        if (panel) {
+            panel->hide();
+            auto *hit = memnew(TextureButton);
+            hit->set_name(prefix + String("Hit"));
+            hub_content->add_child(hit);
+            hit->set_texture_normal(load("konzetsu/hub/node/node-panel.png"));
+            hit->set_texture_pressed(load("konzetsu/hub/node/node-pressed.png"));
+            hit->set_ignore_texture_size(true);
+            hit->set_stretch_mode(TextureButton::STRETCH_SCALE);
+            hit->set_position(panel->get_position());
+            hit->set_size(panel->get_size());
+            art[(prefix + String("Hit")).utf8().get_data()] = hit;
+            hit->set_focus_mode(Control::FOCUS_NONE);
+            hit->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
+            hit->set_disabled(i == 5 && !konzetsu_all_daily_tasks_complete(konzetsu_tasks));
+            hit->connect("pressed", Callable(this, "open_konzetsu_challenge").bind(i + 1));
+        }
         const String path = "node/node-number" + String::num_int64(i + 1) + ".png";
         add_hub(prefix + String("Number"), path,
             positions[i].x * 1.5f + 3, positions[i].y * 1.5f + 9);
+        add_hub(prefix + String("Dim"), "node/node-dim-inactive.png", x, y);
+        add_hub(prefix + String("Ripple"), "node/node-clear-ripple.png", x, y);
+        add_hub(prefix + String("Badge"), "node/node-clear-badge" + String::num_int64(i + 1) + ".png", x + 6, y);
+        add_hub(prefix + String("Chain"), "node/node-clear-chain.png", x, y - 48);
+        add_hub(prefix + String("BadgeInactive"), "node/node-clear-badge" + String::num_int64(i + 1) + "-inactive.png", x + 6, y);
+        add_hub(prefix + String("RippleInactive"), "node/node-clear-ripple-inactive.png", x, y);
+        add_hub(prefix + String("ChainInactive"), "node/node-clear-chain-inactive.png", x, y - 48);
+        if (i == 5) {
+            add_hub("HubNode6Locked", "node/node-locked.png",
+                positions[i].x * 1.5f, positions[i].y * 1.5f);
+            if (Control *lock = art["HubNode6Locked"]) {
+                lock->set_position(lock->get_position() + Vector2(10.f * 1.5f, -6.f * 1.5f));
+                lock->set_visible(!konzetsu_all_daily_tasks_complete(konzetsu_tasks));
+            }
+        }
     }
+    refresh_konzetsu_hub_visuals();
     Ref<Texture2D> back_texture = load("konzetsu/hub/back.png");
     const float back_width = back_texture.is_valid() ? back_texture->get_width() * scale : 0;
     const float back_height = back_texture.is_valid() ? back_texture->get_height() * scale : 0;
@@ -351,9 +466,11 @@ void ClientScreen::build_konzetsu() {
     if (back) {
         back->set_position(Vector2((W - back_width) / 2, 0));
         back->set_pivot_offset(Vector2(back_width / 2, back_height));
+        back->set_modulate(Color(1, 1, 1, 0));
+        back->set_visible(false);
+        back->set_disabled(true);
+        back->connect("pressed", Callable(this, "return_to_menu"));
     }
-    back->set_visible(false);
-    back->connect("pressed", Callable(this, "return_to_menu"));
     art["HubBack"] = back;
 
     Ref<Texture2D> loading_bg = load("konzetsu/loadtransition/loading-bg.png");
@@ -406,6 +523,539 @@ void ClientScreen::build_konzetsu() {
     }
 }
 
+void ClientScreen::refresh_konzetsu_hub_visuals() {
+    if (!hub_content) return;
+    const bool all_complete = !konzetsu_pending_clear_mask && konzetsu_all_daily_tasks_complete(konzetsu_tasks);
+    const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
+        "HubCenterChainRight", "HubBottomChainLeft", "HubBottomChainRight"};
+    for (int i = 0; i < 6; ++i) {
+        const bool cleared = i < 5 && konzetsu_tasks.size() > i
+            && !(konzetsu_pending_clear_mask & (1 << i))
+            && konzetsu_tasks[i].get_type() == Variant::DICTIONARY
+            && konzetsu_daily_task_complete(Dictionary(konzetsu_tasks[i]));
+        const bool completed = i < 5 && all_complete;
+        const bool center_chain_cleared = cleared
+            || (i == 5 && !String(konzetsu_completed_songs.get(6, "")).is_empty());
+        if (Control *chain = art[center_chains[i]])
+            chain->set_modulate(Color(1, 1, 1, center_chain_cleared ? 0.f : 1.f));
+        const String prefix = "HubNode" + String::num_int64(i + 1);
+        auto set_visible = [&](const String &name, bool visible) {
+            if (Control *node = art[name.utf8().get_data()]) node->set_visible(visible);
+        };
+        auto set_alpha = [&](const String &name, float alpha) {
+            if (Control *node = art[name.utf8().get_data()]) node->set_modulate(Color(1, 1, 1, alpha));
+        };
+        set_visible(prefix + String("Panel"), false);
+        for (const char *suffix : {"Number", "Swirl", "Dim", "Badge", "Ripple", "Chain",
+                "BadgeInactive", "RippleInactive", "ChainInactive"})
+            set_alpha(prefix + String(suffix), 1.f);
+        set_alpha(prefix + String("Hit"), cleared ? 0.f : 1.f);
+        set_visible(prefix + String("Number"), !cleared);
+        set_visible(prefix + String("Swirl"), cleared);
+        set_visible(prefix + String("Dim"), cleared);
+        set_visible(prefix + String("Badge"), cleared && !completed);
+        set_visible(prefix + String("Ripple"), cleared && !completed);
+        set_visible(prefix + String("Chain"), cleared && !completed);
+        for (const char *suffix : {"BadgeInactive", "RippleInactive", "ChainInactive"})
+            set_visible(prefix + String(suffix), completed);
+        if (i == 5) {
+            if (Control *lock = art["HubNode6Locked"]) lock->set_visible(!all_complete);
+            if (BaseButton *hit = Object::cast_to<BaseButton>(hub_content->get_node_or_null("HubNode6Hit")))
+                hit->set_disabled(!all_complete);
+        }
+    }
+}
+
+int ClientScreen::konzetsu_new_clear_mask(const Array &previous, const Array &tasks) {
+    if (previous.size() != 5 || tasks.size() != 5) return 0;
+    int mask = 0;
+    for (int i = 0; i < 5; ++i) {
+        if (previous[i].get_type() != Variant::DICTIONARY || tasks[i].get_type() != Variant::DICTIONARY) continue;
+        const Dictionary before = previous[i], after = tasks[i];
+        // A replacement daily task has no previously observed completion transition.
+        bool same_task = true;
+        for (const char *key : {"id", "song", "difficulty", "req", "amount"})
+            if (before.get(key, Variant()) != after.get(key, Variant())) same_task = false;
+        if (same_task && !konzetsu_daily_task_complete(before) && konzetsu_daily_task_complete(after)) mask |= 1 << i;
+    }
+    return mask;
+}
+
+void ClientScreen::step_konzetsu_clear_animation(double delta) {
+    if (!konzetsu_pending_clear_mask || !hub_content) return;
+    if (konzetsu_clear_seconds < 0) konzetsu_clear_seconds = 0;
+    konzetsu_clear_seconds += delta;
+    const float fade = std::clamp(float(konzetsu_clear_seconds / .7), 0.f, 1.f);
+    const float chain_fade = std::clamp(float(konzetsu_clear_seconds / .3), 0.f, 1.f);
+    const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
+        "HubCenterChainRight", "HubBottomChainLeft"};
+    for (int i = 0; i < 5; ++i) {
+        if (!(konzetsu_pending_clear_mask & (1 << i))) continue;
+        const String prefix = "HubNode" + String::num_int64(i + 1);
+        for (const char *suffix : {"Hit", "Number", "Swirl", "Dim", "Badge", "Ripple", "Chain"}) {
+            if (Control *node = art[(prefix + String(suffix)).utf8().get_data()]) {
+                node->show();
+                const bool disappearing = String(suffix) == "Hit" || String(suffix) == "Number";
+                node->set_modulate(Color(1, 1, 1, disappearing ? 1.f - fade : fade));
+            }
+        }
+        if (Control *chain = art[center_chains[i]]) chain->set_modulate(Color(1, 1, 1, 1.f - chain_fade));
+    }
+    if (konzetsu_clear_seconds >= .7) {
+        konzetsu_pending_clear_mask = 0;
+        konzetsu_clear_seconds = -1;
+        refresh_konzetsu_hub_visuals();
+    }
+}
+
+void ClientScreen::set_konzetsu_progress(const Dictionary &completed_songs) {
+    // Keys are challenge IDs (1..6); values are the completed song IDs.
+    konzetsu_completed_songs = completed_songs.duplicate(true);
+    refresh_konzetsu_hub_visuals();
+    if (hub_content) {
+        const bool unlocked = konzetsu_all_daily_tasks_complete(konzetsu_tasks);
+        if (auto *sixth_hit = Object::cast_to<BaseButton>(hub_content->get_node_or_null("HubNode6Hit")))
+            sixth_hit->set_disabled(!unlocked);
+        if (Control *lock = Object::cast_to<Control>(hub_content->get_node_or_null("HubNode6Locked")))
+            lock->set_visible(!unlocked);
+    }
+    if (konzetsu_dialog && konzetsu_dialog->is_visible()) close_konzetsu_challenge();
+}
+
+void ClientScreen::open_konzetsu_challenge(int id) {
+    // Remove clock restriction for offline preview mode
+    if (scene_kind != 2 || switching || clock < 4.35 || konzetsu_pending_clear_mask || id < 1 || id > 6) return;
+    if (konzetsu_dialog && konzetsu_dialog->is_visible()) return;
+    const char *titles_zh[] = {"I. 晦涩之道", "II. 扭曲之道", "III. 无极之道",
+        "IV. 残缺之道", "V. 无形之道", "VI."};
+    const char *task_title_prefixes[] = {"I.", "II.", "III.", "IV.", "V."};
+    const char *hints_zh[] = {"培养对不可察觉之物的感知。", "挣脱时间的桎梏。",
+        "重构世界。", "稍歇一会，便再度迈步吧。",
+        "伸手，触碰那不可能之物。", "开拓。"};
+    const char **titles = titles_zh;
+    const char **hints = hints_zh;
+    const char *stories_zh[] = {
+        "// 比起细腻柔软的布料，这个世界更像是难以捉摸的大海，\n组成Arcaea的东西无时无刻不在以令人难以理解的方式变化。\n很多人也许会用描述情感的词来形容这种变化：冷静的，\n或是愤怒的；阴暗的，或是柔和的。\n\n潮水般，时涨，时落…… //",
+        "// 七彩的光芒透过破碎的玻璃喷涌而出，连带着时间也停止了下来。\n这种情况先前肯定也发生过。\n\n这种抗拒的方式，这种似曾相识的感觉——\n时光仍处于冰封之中，她的心情也低沉到了冰点。\n现在的她，只想让自己就此打住。//",
+        "// 新的路径已经完工，她自然刻不容缓地登上了阶梯。\n那把浮空座椅近距离陪伴在她身旁，随时准备接住也许会不慎失足的她。\n当女孩往上迈进时，她更是抽走了位于最下端的梯级，接续在整体结构的最上方。\n没过多久，她便意识到自己是在攀爬一段永无止境地延伸的螺旋长梯。\n穿过层层云雾，直至抵达最高点。//",
+        "// 她将自己的衣服捂得更紧了点，思量着要不要闭上眼睛。\n最后她没有那么做，而是哆嗦着死死盯着她前方上空中碎片的变化。\n即使是自己都快要给吹跑了，雪没过小腿，没过膝盖了，\n她也丝毫没有移开视线。她那厚厚的长袍此时显得特别单薄，\n而她的呼吸也逐渐急促了起来。 //",
+        "// 每踏出一步，场景就转换一次。她的脚步能改变脚下的地面，\n并改造空间。她走向织锦旁，却发现布料并未好好缝上。\n玻璃静静地滑过她的身边，然后突然四散，像是受到了惊吓。\n她周遭的世界已变得漆黑而不再洁白。繁星洒落在空中，\n脚下的路却是如此支离破碎…… //",
+        "// 她是生命的摇篮孕育的花。\n矛尖的殷红不断坠落，她的双眼却再次睁开。\n凝视那神明的骸骨吧，少女，然后命令祂——\n给予祂一切。//"};
+    const char **stories = stories_zh;
+    String task_title;
+    String task_hint;
+    String task_story;
+    String task_song_id;
+    String task_art_path;
+    bool target_chart_perfect = false;
+    bool target_chart_link = false;
+    bool daily_score_total = false;
+    bool any_song_perfect = false;
+    bool daily_full_link = false;
+    bool daily_rating_14 = false;
+    int64_t task_current = 0;
+    String current_score;
+    String target_score;
+    if (id <= 5 && konzetsu_tasks_loaded && konzetsu_tasks.size() >= id) {
+        const Dictionary task = konzetsu_tasks[id - 1];
+        const Dictionary req = task.get("req", Dictionary());
+        const Dictionary state = task.get("state", Dictionary());
+        const String task_id = String(task.get("id", ""));
+        task_title = String(task.get("name", U"每日任务"));
+        const int64_t raw_current = task_integer(task, state, "current");
+        const int64_t progress = task_integer(task, state, "progress",
+            req.has("value") ? int64_t(req["value"]) : 0);
+        const int64_t amount = task_integer(task, state, "amount",
+            req.has("amount") ? int64_t(req["amount"]) : 0);
+        const int64_t current = std::max<int64_t>(0, raw_current);
+        task_current = current;
+        const int64_t capped_current = progress > 0 ? std::min(current, progress) : current;
+        const String current_text = String::num_int64(capped_current);
+        const String progress_text = String::num_int64(progress);
+        task_hint = String(U"进度 ") + String::num_int64(current)
+            + (progress > 0 ? String(U" / ") + progress_text : String());
+        if (req.has("song")) task_story += String(U"指定歌曲：") + String(req.get("song", ""));
+        if (req.has("diff")) task_story += String(U"\n难度：") + String(req.get("diff", ""));
+        task_story += String(U"\n完成条件由服务端每日生成。奖励：15 Ticket。//");
+        if (String(task.get("id", "")) == "target_chart_score") {
+            task_title = U"登临之道";
+            task_story = "";
+            const String song_id = String(task.get("song", ""));
+            task_song_id = song_id;
+            const int difficulty = int(task.get("difficulty", 0));
+            const String difficulty_name = difficulty == 2 ? "ULT"
+                : difficulty == 3 || difficulty == 4 ? "FBD" : String::num_int64(difficulty);
+            String score_w = String::num(double(task.get("progress", 0)) / 10000.0, 2);
+            if (score_w.contains(".")) {
+                while (score_w.ends_with("0")) score_w = score_w.left(score_w.length() - 1);
+                if (score_w.ends_with(".")) score_w = score_w.left(score_w.length() - 1);
+            }
+            task_hint = String(U"以 ") + score_w + String(U"w 或以上成绩通关「")
+                + content::song_title(song_id) + String(U"」[") + difficulty_name + String(U"]");
+        }
+        if (String(task.get("id", "")) == "target_chart_judgment_limit") {
+            task_title = U"无痕之道";
+            task_song_id = String(task.get("song", ""));
+            const int difficulty = int(task.get("difficulty", 0));
+            const String difficulty_name = difficulty == 2 ? "ULT"
+                : difficulty == 3 || difficulty == 4 ? "FBD" : String::num_int64(difficulty);
+            task_hint = String(U"通关「")
+                + content::song_title(task_song_id) + String(U"」[")
+                + difficulty_name + String(U"] 时 NEAR + BREAK 不大于 ")
+                + String::num_int64(int64_t(task.get("progress", 0)));
+        }
+        if (String(task.get("id", "")) == "target_chart_dual_difficulty_clear") {
+            task_title = U"双生之道";
+            task_song_id = String(task.get("song", ""));
+            const String both_charts = String(U"通关「") + content::song_title(task_song_id)
+                + String(U"」[ULT] [FBD] 各 1 次");
+            task_hint = current == 1 ? both_charts.replace("[ULT] ", "")
+                : current == 2 ? both_charts.replace("[FBD] ", "") : both_charts;
+        }
+        if (String(task.get("id", "")) == "target_chart_perfect_or_clear_twice") {
+            target_chart_perfect = true;
+            task_title = U"无暇之道";
+            task_song_id = String(task.get("song", ""));
+            task_hint = String(U"PERFECT DIVE 通关「") + content::song_title(task_song_id) + String(U"」");
+        }
+        if (String(task.get("id", "")) == "target_chart_link_or_clear_twice") {
+            target_chart_link = true;
+            task_title = U"连绵之道";
+            task_song_id = String(task.get("song", ""));
+            task_hint = String(U"FULL LINK 通关「") + content::song_title(task_song_id) + String(U"」");
+        }
+        if (task_id == "shiny_pure_total") {
+            task_title = U"辉耀之道";
+            task_art_path = "img/hit_max.png";
+        } else if (task_id == "daily_near_total") {
+            task_title = U"偏离之道";
+            task_art_path = "img/hit_far.png";
+        } else if (task_id == "daily_exact_total") {
+            task_title = U"秩序之道";
+            task_art_path = "img/hit_pure.png";
+        } else if (task_id == "daily_break_total") {
+            task_title = U"残缺之道";
+            task_art_path = "img/hit_lost.png";
+        }
+        if (!task_art_path.is_empty()) {
+            const int64_t capped_amount = amount > 0 ? std::min(current, amount) : current;
+            task_hint = String(U"累计获得 ") + String::num_int64(capped_amount) + "/"
+                + String::num_int64(amount) + String(U" 个此判定");
+        }
+        if (task_id == "daily_score_total") {
+            daily_score_total = true;
+            task_title = U"无际之道";
+            current_score = current_text + String("/");
+            target_score = progress_text;
+            task_hint = U"累计获得一定分数";
+        } else if (task_id == "daily_full_link_total") {
+            daily_full_link = true;
+            task_title = U"不绝之道";
+            task_art_path = "img/clear_fl.png";
+            task_hint = String(U"获得 FULL LINK ")
+                + current_text + "/" + progress_text + String(U" 次");
+        } else if (task_id == "daily_unplayed_song_clear") {
+            task_title = U"未知之道";
+            task_art_path = "img/new_badge.png";
+            task_hint = U"通关任意一首未曾游玩过的曲目";
+        } else if (task_id == "high_const_clear_total") {
+            daily_rating_14 = true;
+            task_title = U"晦涩之道";
+            task_hint = String(U"通关 ") + current_text + "/" + progress_text
+                + String(U" 首定级为 14 的曲目");
+        } else if (task_id == "any_song_perfect_or_clear_twice") {
+            any_song_perfect = true;
+            task_title = U"无形之道";
+            task_art_path = "img/clear_pd.png";
+            task_hint = U"获得 PERFECT DIVE";
+        }
+    }
+    const bool distinct = konzetsu_all_daily_tasks_complete(konzetsu_tasks);
+    konzetsu_challenge = id;
+    konzetsu_dialog_closing = false;
+    const String completed = konzetsu_completed_songs.get(id, "");
+    konzetsu_dialog_mode = !completed.is_empty() ? 1 : id == 6 && !distinct ? 2 : 0;
+    play_sfx("konzetsu/ui_tap.wav");
+    if (konzetsu_dialog) {
+        konzetsu_gallery_strip = nullptr;
+        konzetsu_gallery_cycle_width = 0;
+        konzetsu_gallery_unused.clear();
+        konzetsu_gallery_decode_attempted = false;
+        stage->remove_child(konzetsu_dialog);
+        konzetsu_dialog->queue_free();
+    }
+    konzetsu_dialog = memnew(Control);
+    konzetsu_dialog->set_name("KonzetsuChallengeDialog");
+    stage->add_child(konzetsu_dialog);
+    konzetsu_dialog->set_size(Vector2(W, H));
+    konzetsu_dialog->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+    auto *shade = memnew(ColorRect);
+    shade->set_name("Dimmer");
+    konzetsu_dialog->add_child(shade);
+    shade->set_size(Vector2(W, H));
+    shade->set_color(Color(0, 16.f / 255, 12.f / 255, 148.f / 255));
+    shade->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+    auto *visuals = memnew(Control);
+    visuals->set_name("PanelVisuals");
+    konzetsu_dialog->add_child(visuals);
+    visuals->set_size(Vector2(W, H));
+    visuals->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+    const String base = "konzetsu/hub/challengedialog/";
+    auto dialog_art = [&](const char *name, const String &file, float y = 0.f) {
+        Ref<Texture2D> texture = load(base + file);
+        if (texture.is_valid()) {
+            auto *rect = memnew(TextureRect);
+            rect->set_name(name);
+            visuals->add_child(rect);
+            rect->set_texture(texture);
+            rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+            rect->set_stretch_mode(TextureRect::STRETCH_SCALE);
+            rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+            const float width = texture->get_width() * 1.005f;
+            const float height = texture->get_height() * 1.005f;
+            rect->set_size(Vector2(width, height));
+            rect->set_position(at(0, y, width, height, .5f, 1.f));
+            rect->set_pivot_offset(Vector2(width * .5f, height));
+        }
+    };
+    dialog_art("Backing", konzetsu_dialog_mode == 2 ? "popup-bg-locked.png" : "popup-bg.png", 540.f);
+    dialog_art("Spear", "popup-spear.png", 540.f);
+
+    auto *content = memnew(Control);
+    content->set_name("DialogContent");
+    if (konzetsu_dialog_mode == 2) {
+        Ref<Texture2D> rune_texture = content::image(base + String("popup-text-rune.png"));
+        if (rune_texture.is_valid()) {
+            auto *rune = memnew(TextureRect);
+            rune->set_name("Rune");
+            visuals->add_child(rune);
+            rune->set_texture(rune_texture);
+            rune->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+            rune->set_stretch_mode(TextureRect::STRETCH_SCALE);
+            rune->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+            const float width = rune_texture->get_width() * 1.005f;
+            const float height = rune_texture->get_height() * 1.005f;
+            rune->set_size(Vector2(width, height));
+            rune->set_position(Vector2((W - width) * .5f, 150 - height * .5f));
+        }
+        dialog_art("LockedOverlay", "popup-bg-locked-overlay.png", 540.f);
+    }
+    visuals->add_child(content);
+    constexpr float cocos_to_canvas = 1.5f;
+    constexpr float content_width = 1085.f * cocos_to_canvas;
+    constexpr float content_height = 480.f * cocos_to_canvas;
+    content->set_size(Vector2(content_width, content_height));
+    content->set_position(Vector2((W - content_width) * .5f,
+        H * .5f - 80.f * cocos_to_canvas - content_height * .5f));
+    auto set_local_text_rect = [](Label *label, float x, float y, float width, float height) {
+        label->set_anchor(SIDE_LEFT, 0);
+        label->set_anchor(SIDE_TOP, 0);
+        label->set_anchor(SIDE_RIGHT, 0);
+        label->set_anchor(SIDE_BOTTOM, 0);
+        label->set_size(Vector2(width, height));
+        label->set_position(Vector2(x, y));
+    };
+    const String display_title = task_title.is_empty() ? String::utf8(titles[id - 1])
+        : String(task_title_prefixes[id - 1]) + " " + task_title;
+    auto *title = caption(content, "Title", display_title, 0, 135, content_width, 42,
+        Color(217.f / 255, 207.f / 255, 173.f / 255), true);
+    if (!task_title.is_empty()) {
+        Ref<Font> task_title_font = unfalsus_ui::prepare_font("VivoSans-Regular-Full.ttf");
+        if (task_title_font.is_valid()) title->add_theme_font_override("font", task_title_font);
+    }
+    set_local_text_rect(title, 0, (480.f - 370.f) * cocos_to_canvas - title->get_size().y * .5f,
+        content_width, title->get_size().y);
+    Label *story = caption(content, "Story", "", 0, -128, content_width, 24,
+        Color(225.f / 255, 217.f / 255, 191.f / 255), true);
+    Ref<Font> task_body_font = unfalsus_ui::prepare_font("VivoSans-Regular-Full.ttf");
+    if (task_body_font.is_valid()) story->add_theme_font_override("font", task_body_font);
+    story->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+    story->set_clip_text(true);
+    story->set_text("");
+    constexpr float story_height = 120.f * cocos_to_canvas;
+    const float story_y = (480.f - 250.f) * cocos_to_canvas - story_height * .5f;
+    set_local_text_rect(story, 0, story_y,
+        content_width, story_height);
+    story->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+    if (daily_score_total && task_body_font.is_valid()) {
+        constexpr int current_size = 54;
+        constexpr int target_size = 36;
+        const float current_width = task_body_font->get_string_size(current_score, HORIZONTAL_ALIGNMENT_LEFT, -1, current_size).x;
+        const float target_width = task_body_font->get_string_size(target_score, HORIZONTAL_ALIGNMENT_LEFT, -1, target_size).x;
+        const float left = (content_width - current_width - target_width) * .5f;
+        const float baseline = story_y + story_height * .5f + task_body_font->get_ascent(current_size) * .5f;
+        auto *current = caption(content, "CurrentScore", current_score, 0, 0, current_width, current_size,
+            Color(225.f / 255, 217.f / 255, 191.f / 255));
+        auto *target = caption(content, "TargetScore", target_score, 0, 0, target_width, target_size,
+            Color(225.f / 255, 217.f / 255, 191.f / 255));
+        for (Label *label : {current, target}) {
+            label->add_theme_font_override("font", task_body_font);
+            label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+            label->set_vertical_alignment(VERTICAL_ALIGNMENT_TOP);
+        }
+        set_local_text_rect(current, left, baseline - task_body_font->get_ascent(current_size), current_width,
+            task_body_font->get_height(current_size));
+        set_local_text_rect(target, left + current_width, baseline - task_body_font->get_ascent(target_size), target_width,
+            task_body_font->get_height(target_size));
+    }
+    if (task_art_path.is_empty() && !task_song_id.is_empty())
+        task_art_path = String("songs/dl_") + task_song_id + String("/1080_base.jpg");
+    if (daily_rating_14) {
+        const PackedStringArray candidates = content::songs_with_rating_at_least(14);
+        if (!candidates.is_empty()) {
+            PackedStringArray selected;
+            PackedStringArray available = candidates;
+            while (selected.size() < 6 && !available.is_empty()) {
+                const int index = UtilityFunctions::randi_range(0, available.size() - 1);
+                selected.push_back(available[index]);
+                available.remove_at(index);
+            }
+            konzetsu_gallery_unused = available;
+            auto *viewport = memnew(Control);
+            viewport->set_name("TaskSongGallery");
+            content->add_child(viewport);
+            viewport->set_clip_contents(true);
+            const float gallery_width = 1180.f;
+            const float gallery_height = story_height + 54.f;
+            viewport->set_position(Vector2((content_width - gallery_width) * .5f, story_y - 15.f));
+            viewport->set_size(Vector2(gallery_width, gallery_height));
+            auto *strip = memnew(Control);
+            viewport->add_child(strip);
+            konzetsu_gallery_strip = strip;
+            const float tile_size = gallery_height;
+            const float gap = 18.f;
+            for (int copy = 0; copy < 2; ++copy) {
+                for (int i = 0; i < selected.size(); ++i) {
+                    const String gallery_path = String("songs/dl_") + selected[i] + "/1080_base.jpg";
+                    auto *tile = memnew(TextureRect);
+                    strip->add_child(tile);
+                    tile->set_meta("gallery_path", gallery_path);
+                    tile->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+                    tile->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+                    tile->set_position(Vector2((copy * selected.size() + i) * (tile_size + gap), 0));
+                    tile->set_size(Vector2(tile_size, tile_size));
+                    tile->set_modulate(Color(1, 1, 1, 0));
+                    tile->set_meta("gallery_slot", i);
+                    tile->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+                }
+            }
+            const float cycle_width = selected.size() * (tile_size + gap);
+            konzetsu_gallery_cycle_width = cycle_width;
+            strip->set_size(Vector2(cycle_width * 2.f, gallery_height));
+            auto *fade_mask = memnew(ColorRect);
+            content->add_child(fade_mask);
+            fade_mask->set_name("TaskGalleryFadeMask");
+            fade_mask->set_position(viewport->get_position());
+            fade_mask->set_size(Vector2(gallery_width, gallery_height));
+            fade_mask->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+            Ref<Shader> fade_shader;
+            fade_shader.instantiate();
+            fade_shader->set_code(R"shader(shader_type canvas_item;
+                void fragment() {
+                    const float edge = 0.14;
+                    float alpha = max((edge - UV.x) / edge, (UV.x - (1.0 - edge)) / edge);
+                    COLOR = vec4(0.0, 16.0 / 255.0, 12.0 / 255.0, clamp(alpha, 0.0, 1.0));
+                }
+            )shader");
+            Ref<ShaderMaterial> fade_material;
+            fade_material.instantiate();
+            fade_material->set_shader(fade_shader);
+            fade_mask->set_material(fade_material);
+        }
+    } else if (!task_art_path.is_empty()) {
+        const Ref<Texture2D> song_art = content::image(task_art_path);
+        if (song_art.is_valid()) {
+            auto *art = memnew(TextureRect);
+            art->set_name("TaskSongArtwork");
+            content->add_child(art);
+            art->set_texture(song_art);
+            art->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+            art->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+            const float art_scale = any_song_perfect || daily_full_link ? .75f
+                : task_art_path == "img/new_badge.png" ? .8f : 1.f;
+            const float art_height = (story_height + 54.f) * art_scale;
+            const float art_width = content_width * art_scale;
+            art->set_position(Vector2((content_width - art_width) * .5f,
+                story_y - 15.f + (story_height + 54.f - art_height) * .5f));
+            art->set_size(Vector2(art_width, art_height));
+            art->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+        }
+    }
+    const String display_hint = task_hint.is_empty() ? String::utf8(hints[id - 1]) : task_hint;
+    auto *hint = caption(content, "Hint", display_hint, 0, 16, content_width, 30,
+        Color(225.f / 255, 217.f / 255, 191.f / 255), true);
+    Ref<Font> task_hint_font = unfalsus_ui::prepare_font("VivoSans-Regular-Full.ttf");
+    if (task_hint_font.is_valid()) hint->add_theme_font_override("font", task_hint_font);
+    set_local_text_rect(hint, 0, (480.f - 160.f) * cocos_to_canvas - hint->get_size().y * .5f + 42.f,
+        content_width, hint->get_size().y);
+    if (target_chart_perfect || target_chart_link || any_song_perfect) {
+        const Ref<Font> font = hint->get_theme_font("font");
+        const String target_phrase = target_chart_link ? "FULL LINK" : "PERFECT DIVE";
+        const float phrase_width = font->get_string_size(target_phrase, HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x;
+        const float hint_width = font->get_string_size(display_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x;
+        const int64_t clear_count = task_current == 1 ? 1 : 2;
+        const String note_text = String(U"或 DIVE CLEARED ") + String::num_int64(clear_count) + String(U" 次");
+        const float note_width = font->get_string_size(note_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x;
+        auto *note = caption(content, "PerfectDiveNote", note_text, 0, 0, note_width, 18,
+            Color(225.f / 255, 217.f / 255, 191.f / 255), true);
+        note->add_theme_font_override("font", font);
+        const float prefix_width = any_song_perfect
+            ? font->get_string_size(U"获得 ", HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x : 0.f;
+        set_local_text_rect(note, (content_width - hint_width + phrase_width - note_width) * .5f + prefix_width,
+            hint->get_position().y - note->get_size().y, note_width, note->get_size().y);
+    }
+    const String action = konzetsu_dialog_mode == 2 ? "return" : konzetsu_dialog_mode == 1 ? "retrace" : "commence";
+    const String normal = base + String("popup-btn-") + action + String(".png");
+    const String pressed = base + String("popup-btn-") + action + String("-pressed.png");
+    Ref<Texture2D> texture = load(normal);
+    auto *confirm = art_button(content, "Confirm", normal,
+         pressed, 0, -60,
+        texture.is_valid() ? texture->get_width() * 1.005f : 450,
+        texture.is_valid() ? texture->get_height() * 1.005f : 135);
+    confirm->set_position(Vector2((content_width - confirm->get_size().x) * .5f,
+        (480.f - 60.f) * cocos_to_canvas - confirm->get_size().y * .5f));
+    confirm->connect("pressed", Callable(this, "confirm_konzetsu_challenge"));
+    confirm->set_texture_pressed(load(pressed));
+    confirm->set_disabled(konzetsu_dialog_mode != 2 && get_signal_connection_list("konzetsu_challenge_requested").is_empty());
+    auto *close = art_button(visuals, "Close", base + String("popup-btn-x.png"), "", 745, 345, 40, 40);
+    close->connect("pressed", Callable(this, "close_konzetsu_challenge"));
+    visuals->set_pivot_offset(Vector2(W / 2, H / 2));
+    visuals->set_scale(Vector2(1.1f, 1.1f));
+    konzetsu_dialog->set_modulate(Color(1, 1, 1, 0));
+    konzetsu_dialog_tween = create_tween();
+    konzetsu_dialog_tween->set_parallel(true);
+    konzetsu_dialog_tween->tween_property(visuals, "scale", Vector2(1, 1), .3)
+        ->set_trans(Tween::TRANS_ELASTIC)->set_ease(Tween::EASE_OUT);
+    konzetsu_dialog_tween->tween_property(konzetsu_dialog, "modulate:a", 1.f, .3);
+    layout();
+}
+
+void ClientScreen::close_konzetsu_challenge() {
+    if (!konzetsu_dialog || !konzetsu_dialog->is_visible() || konzetsu_dialog_closing) return;
+    konzetsu_dialog_closing = true;
+    if (konzetsu_dialog_tween.is_valid()) konzetsu_dialog_tween->kill();
+    play_sfx("konzetsu/ui_close.wav");
+    konzetsu_dialog_tween = create_tween();
+    konzetsu_dialog_tween->set_parallel(true);
+    konzetsu_dialog_tween->tween_property(konzetsu_dialog->get_node<Control>("PanelVisuals"), "scale", Vector2(1.1f, 1.1f), .3);
+    konzetsu_dialog_tween->tween_property(konzetsu_dialog, "modulate:a", 0.f, .3);
+    konzetsu_dialog_tween->chain()->tween_callback(Callable(konzetsu_dialog, "hide"));
+}
+
+void ClientScreen::confirm_konzetsu_challenge() {
+    if (!konzetsu_dialog || !konzetsu_dialog->is_visible() || switching || konzetsu_dialog_closing) return;
+    if (konzetsu_dialog_mode == 2) {
+        close_konzetsu_challenge();
+        return;
+    }
+    if (get_signal_connection_list("konzetsu_challenge_requested").is_empty()) return;
+    const int index = konzetsu_challenge - 1;
+    close_konzetsu_challenge();
+    if (ResourceLoader::get_singleton()->exists("res://assets/resources/audio/konzetsu/start_challenge.wav"))
+        play_sfx("konzetsu/start_challenge.wav");
+    emit_signal("konzetsu_challenge_requested", index);
+}
+
 void ClientScreen::prepare_menu_dialogs() {
     menu_preparing = true;
     for (int i = 0; i < catalog.size(); ++i) {
@@ -451,7 +1101,6 @@ void ClientScreen::prepare_menu_dialogs() {
     for (const char *file : {"06_LesserButtonClickV2.ogg", "08_TimelineNodeClick.ogg",
             "10_TimelineSpecialNodeClick.ogg", "25_VNIMText.ogg", "75_unlock.ogg"})
         menu_resources.push_back(ResourceLoader::get_singleton()->load(String("res://assets/resources/audio/sfx/") + file));
-    stage->hide();
     content::warmup_partner_assets_begin();
 }
 
@@ -1050,6 +1699,19 @@ static String menu_token() {
     return String(config->get_value("auth", "token", ""));
 }
 
+void ClientScreen::position_hub_portrait(float slide_offset) {
+    hub_portrait_slide_offset = slide_offset;
+    if (!stage) return;
+    Control *portrait = Object::cast_to<Control>(stage->get_node_or_null("PartnerIllustration"));
+    if (!portrait) return;
+    const Vector2 viewport_size = get_size();
+    const float scale = std::min(viewport_size.x / W, viewport_size.y / H);
+    const float extra = scale > 0 ? std::max(0.f, viewport_size.x / scale - W) : 0.f;
+    const Vector2 size = portrait->get_size();
+    portrait->set_position(at(-330, -225, size.x, size.y) - Vector2(extra * .5f, 0)
+        + Vector2(slide_offset, 0));
+}
+
 void ClientScreen::apply_hub_partner(int id, bool slide) {
     const Dictionary row = content::character(catalog, id);
     if (row.is_empty()) return;
@@ -1071,10 +1733,6 @@ void ClientScreen::apply_hub_partner(int id, bool slide) {
     if (!portrait.is_valid()) return;
     TextureRect *node = art.count("PartnerIllustration") ? Object::cast_to<TextureRect>(art["PartnerIllustration"]) : nullptr;
     const Vector2 size(portrait->get_width(), portrait->get_height());
-    // Keep the same ultrawide compensation used by layout(). The default
-    // portrait is placed there during layout, while a newly selected
-    // portrait reaches its target through this animation path.
-    const Vector2 rest = at(-330, -225, size.x, size.y) - Vector2(design_extra * .5f, 0);
     if (!node) {
         node = memnew(TextureRect);
         node->set_name("PartnerIllustration");
@@ -1086,16 +1744,19 @@ void ClientScreen::apply_hub_partner(int id, bool slide) {
     }
     node->set_texture(portrait);
     node->set_size(size);
+    if (hub_portrait_tween.is_valid()) hub_portrait_tween->kill();
     if (!slide) {
-        node->set_position(rest);
+        hub_portrait_slide_seconds = .45;
+        position_hub_portrait(0);
         node->set_modulate(Color(1, 1, 1, 1));
         return;
     }
-    node->set_position(rest + Vector2(225, 0));
+    hub_portrait_slide_seconds = 0;
+    position_hub_portrait(225);
     node->set_modulate(Color(1, 1, 1, 0));
     Ref<Tween> tween = node->create_tween();
+    hub_portrait_tween = tween;
     tween->set_parallel(true);
-    tween->tween_property(node, "position", rest, .45)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
     tween->tween_property(node, "modulate:a", 1.f, .45)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
 }
 

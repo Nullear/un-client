@@ -55,7 +55,6 @@ using namespace godot;
 
 namespace {
 static constexpr float W = 1920, H = 1080;
-static constexpr float STARTUP_CANVAS_H = 1440;
 static constexpr const char *IMAGE = "res://assets/resources/img/";
 static constexpr const char *ASSETS = "user://assets";
 enum RequestKind { NONE = 0, AUTH_REFRESH, LOGIN, MANIFEST, DOWNLOAD };
@@ -1572,17 +1571,10 @@ void ClientScreen::startup_set_busy(bool busy) {
             activity->set_stretch_mode(TextureRect::STRETCH_SCALE);
             activity->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
             activity->set_size(Vector2(97, 146));
-            const bool full_canvas = get_size().y > 0 && get_size().x / get_size().y <= W / H;
-            const float canvas_h = login ? H : (full_canvas ? STARTUP_CANVAS_H : H);
             const Vector2 activity_position = login
                 ? Vector2((W - 97) / 2, (H - 146) / 2)
                 : pos(W / 2 - 47 * 1.5f, -H / 2 + 70 * 1.5f, 97, 146);
-            if (login) {
-                activity->set_position(activity_position);
-            } else {
-                activity->set_position(Vector2(activity_position.x,
-                    canvas_h - 146 - (H - 902.f - 146.f)));
-            }
+            activity->set_position(activity_position);
             activity->set_pivot_offset(Vector2(97, 146) / 2);
             activity->set_scale(Vector2(rest, rest));
             activity->set_modulate(Color(1, 1, 1, 0));

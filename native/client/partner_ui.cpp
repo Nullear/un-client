@@ -635,8 +635,12 @@ void ClientScreen::close_partner_modal() {
 void ClientScreen::animate_partner_modal(Control *root) {
     Ref<Tween> &animation = root == partner_message_cache ? partner_message_tween : partner_purchase_tween;
     if (animation.is_valid()) animation->kill();
+    if (root == partner_message_cache) {
+        Control *parent = character_dialog->is_visible_in_tree() ? character_dialog : stage;
+        if (root->get_parent() != parent) root->reparent(parent, false);
+    }
     root->show();
-    character_dialog->move_child(root, character_dialog->get_child_count() - 1);
+    root->get_parent()->move_child(root, root->get_parent()->get_child_count() - 1);
     auto *panel = root->get_node<Control>("Panel");
     auto *dim = root->get_node<Control>("Dimmer");
     panel->set_modulate(Color(1, 1, 1, 0));
@@ -678,7 +682,8 @@ void ClientScreen::end_partner_purchase_activity(bool reveal, const String &erro
     if (!error.is_empty()) {
         partner_modal = nullptr;
         show_partner_message(error);
-        character_dialog->move_child(partner_message_cache, character_dialog->get_child_count() - 1);
+        partner_message_cache->get_parent()->move_child(partner_message_cache,
+            partner_message_cache->get_parent()->get_child_count() - 1);
     } else if (reveal && partner_modal == partner_purchase_cache) {
         character_dialog->move_child(partner_purchase_cache, character_dialog->get_child_count() - 1);
         play_sfx("sfx/25_VNIMText.ogg");
@@ -770,8 +775,8 @@ void ClientScreen::show_partner_message(const String &message) {
     Label *caption = inked(confirm, "Caption", U"确定", 24, regular, PALE, Color(0, 0, 0, 0), 0);
     caption->set_size(Vector2(256, 64));
 
-    confirm->connect("mouse_entered", Callable(this, "partner_caption_color").bind(caption->get_path(), PRESSED_INK));
-    confirm->connect("mouse_exited", Callable(this, "partner_caption_color").bind(caption->get_path(), PALE));
+    confirm->connect("mouse_entered", Callable(caption, "add_theme_color_override").bind("font_color", PRESSED_INK));
+    confirm->connect("mouse_exited", Callable(caption, "add_theme_color_override").bind("font_color", PALE));
     confirm->connect("pressed", Callable(this, "close_partner_modal"));
     animate_partner_modal(root);
     layout();
@@ -815,7 +820,7 @@ void ClientScreen::open_partner_purchase() {
     partner_purchase_confirm_caption = nullptr;
     partner_purchase_requirement_label = nullptr;
     const bool has_requirements = !partner_purchase_requirements.empty();
-    const bool can_buy = priced && after >= 0 && !has_requirements;
+    const bool can_afford = priced && after >= 0;
     if (partner_purchase_cache) {
         partner_modal = partner_purchase_cache;
         auto *panel = partner_modal->get_node<Control>("Panel");
@@ -829,7 +834,8 @@ void ClientScreen::open_partner_purchase() {
         partner_purchase_requirement_label = panel->get_node<Label>("PurchaseRequirement");
         partner_purchase_requirement_label->set_text("");
         partner_purchase_requirement_label->hide();
-        partner_purchase_set_eligible(can_buy);
+        // If has requirements, set to false initially; begin_partner_purchase_check will update
+        partner_purchase_set_eligible(has_requirements ? false : can_afford);
         begin_partner_purchase_check();
         layout();
         return;
@@ -914,7 +920,8 @@ void ClientScreen::open_partner_purchase() {
         button->connect("button_down", Callable(this, "partner_caption_color").bind(caption->get_path(), PRESSED_INK));
         button->connect("button_up", Callable(this, "partner_caption_color").bind(caption->get_path(), PALE));
     };
-    add_plate("Confirm", U"确定", -170, can_buy);
+    const bool initial_eligible = has_requirements ? false : can_afford;
+    add_plate("Confirm", U"确定", -170, initial_eligible);
     add_plate("Cancel", U"取消", 170, true);
     if (TextureButton *confirm = Object::cast_to<TextureButton>(panel->get_node_or_null("Confirm")))
         if (!confirm->is_disabled()) confirm->connect("pressed", Callable(this, "confirm_partner_purchase"));
@@ -977,16 +984,32 @@ void ClientScreen::partner_purchase_check_next() {
     }
     const PurchaseSongRequirement &requirement = partner_purchase_requirements[partner_purchase_candidate];
     const int fixed_difficulty = required_song_difficulty(requirement.id);
-    const bool fixed = fixed_difficulty != 0;
-    const int difficulty = fixed ? fixed_difficulty : 2 + partner_purchase_difficulty_index;
     const String song_id = required_song_id(requirement.id);
+    
+    // If difficulty is fixed, check only that one; otherwise cycle through 2, 3, 4
+    int difficulty;
+    if (fixed_difficulty != 0) {
+        difficulty = fixed_difficulty;
+    } else {
+        // Cycle through difficulties: index 0->2, 1->3, 2->4
+        difficulty = 2 + partner_purchase_difficulty_index;
+    }
+    
+    UtilityFunctions::print(String("[partner_purchase] Checking requirement: id=") + requirement.id 
+        + ", song_id=" + song_id 
+        + ", difficulty=" + String::num_int64(difficulty)
+        + ", fixed=" + (fixed_difficulty ? "true" : "false")
+        + ", any_group=" + (requirement.any_group ? "true" : "false"));
+    
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
     headers.push_back("AppVersion: 1.0.0");
     headers.push_back("Accept: application/json");
     menu_http_kind = 4;
-    const String url = base.trim_suffix("/") + "/score/song/online?song-id=" + song_id.uri_encode()
+    
+    const String url = base.trim_suffix("/") + "/score/song/online?song_id=" + song_id.uri_encode()
         + "&difficulty=" + String::num_int64(difficulty);
+    UtilityFunctions::print(String("[partner_purchase] Request URL: ") + url);
     if (menu_http->request(url, headers) == OK) return;
     menu_http_kind = 0;
     fail_partner_purchase_check(U"无法连接至服务器");
@@ -1038,8 +1061,10 @@ void ClientScreen::partner_purchase_score_result(const PackedByteArray &body, bo
     }
     bool cleared = false;
     const String text = String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).strip_edges();
+    UtilityFunctions::print(String("[partner_purchase] Server response: ") + text);
     const Variant parsed = JSON::parse_string(text);
     if (parsed.get_type() != Variant::DICTIONARY) {
+        UtilityFunctions::printerr("[partner_purchase] Response is not a dictionary");
         fail_partner_purchase_check(U"发生了未知错误");
         return;
     }
@@ -1047,34 +1072,47 @@ void ClientScreen::partner_purchase_score_result(const PackedByteArray &body, bo
     const Variant success = root.get("success", false);
     const bool ok = success == Variant(true) || int(success) == 1 || String(success).to_lower() == "true";
     if (!ok) {
+        UtilityFunctions::printerr(String("[partner_purchase] success=false, response: ") + text);
         fail_partner_purchase_check(U"发生了未知错误");
         return;
     }
     const Variant values = root.get("value", Variant());
     if (values.get_type() != Variant::ARRAY) {
+        UtilityFunctions::printerr("[partner_purchase] value is not an array");
         fail_partner_purchase_check(U"发生了未知错误");
         return;
     }
     if (values.get_type() == Variant::ARRAY) {
         const Array entries = values;
+        UtilityFunctions::print(String("[partner_purchase] Checking ") + String::num_int64(entries.size()) + " score entries");
         for (int i = 0; i < entries.size(); ++i) {
             if (entries[i].get_type() != Variant::DICTIONARY) continue;
-            const Variant clear_type = Dictionary(entries[i]).get("clear_type", 0);
+            const Dictionary entry = entries[i];
+            const Variant clear_type = entry.get("clear_type", 0);
+            UtilityFunctions::print(String("[partner_purchase] Entry ") + String::num_int64(i) 
+                + ": clear_type=" + String(clear_type));
             if (int(clear_type) != 0 || String(clear_type).is_valid_int() && String(clear_type).to_int() != 0) {
                 cleared = true;
+                UtilityFunctions::print("[partner_purchase] Found cleared entry!");
                 break;
             }
         }
     }
+    UtilityFunctions::print(String("[partner_purchase] Final cleared status: ") + (cleared ? "true" : "false"));
     if (cleared) {
         partner_purchase_finish_song(true);
         return;
     }
+    // If not cleared: if fixed difficulty, fail immediately; otherwise try next difficulty
     const String &id = partner_purchase_requirements[partner_purchase_candidate].id;
-    if (required_song_difficulty(id) || ++partner_purchase_difficulty_index >= 3)
+    const bool is_fixed = required_song_difficulty(id) != 0;
+    if (is_fixed || ++partner_purchase_difficulty_index >= 3) {
+        // All difficulties checked or fixed difficulty failed
         partner_purchase_finish_song(false);
-    else
+    } else {
+        // Try next difficulty (2->3->4)
         partner_purchase_check_next();
+    }
 }
 
 void ClientScreen::confirm_partner_purchase() {

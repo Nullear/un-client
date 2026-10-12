@@ -3,6 +3,7 @@
 #include "content.hpp"
 
 #include <godot_cpp/classes/audio_stream.hpp>
+#include <godot_cpp/classes/config_file.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/button.hpp>
@@ -16,6 +17,8 @@
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 #include <godot_cpp/classes/input_event_screen_drag.hpp>
 #include <godot_cpp/classes/input_event_screen_touch.hpp>
+#include <godot_cpp/classes/label.hpp>
+#include <godot_cpp/classes/json.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -23,6 +26,7 @@
 #include <godot_cpp/classes/texture_button.hpp>
 #include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/classes/tween.hpp>
+#include <godot_cpp/classes/property_tweener.hpp>
 #include <godot_cpp/classes/window.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/memory.hpp>
@@ -40,16 +44,16 @@
 using namespace godot;
 
 static constexpr float W = 1920, H = 1080;
-static constexpr float STARTUP_VIRTUAL_H = 1440;
 static constexpr const char *IMAGE = "res://assets/resources/img/";
 static constexpr const char *AUDIO = "res://assets/resources/audio/";
 
 #if defined(_WIN32)
 static HWND aspect_window = nullptr;
 static WNDPROC previous_window_proc = nullptr;
+static bool lock_window_aspect = true;
 
 static LRESULT CALLBACK aspect_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message == WM_SIZING && lparam) {
+    if (message == WM_SIZING && lparam && lock_window_aspect) {
         RECT &rect = *reinterpret_cast<RECT *>(lparam);
         RECT client = {}, outer = {};
         GetClientRect(hwnd, &client);
@@ -152,41 +156,19 @@ void ClientScreen::prepare_scene_resources() {
             if (loaded.is_valid()) menu_resources.push_back(loaded);
         }
     };
-    retain_directory(retain_directory, "res://assets/resources/font/mainmenu");
     if (scene_kind == 1) {
-        std::set<char32_t> glyphs;
-        const String numbers = "0123456789.,:/+-()[] ";
-        for (int i = 0; i < numbers.length(); ++i) glyphs.insert(numbers[i]);
-        const Array rows = content::characters();
-        for (int i = 0; i < rows.size(); ++i) {
-            const Dictionary row = rows[i];
-            for (const char *key : {"name", "skill_name", "illust", "shape_name"}) {
-                const String text = row.get(key, "");
-                for (int j = 0; j < text.length(); ++j) glyphs.insert(text[j]);
-            }
-        }
-        for (const Ref<Resource> &resource : menu_resources) {
-            Ref<FontFile> font = resource;
-            if (!font.is_valid()) continue;
-            for (int size : {18, 20, 24, 26, 27, 28, 30, 36, 54, 68}) {
-                for (char32_t glyph : glyphs) {
-                    font->render_range(0, Vector2i(size, 0), glyph, glyph);
-                    font->render_range(0, Vector2i(size, 3), glyph, glyph);
-                    if (size == 68) font->render_range(0, Vector2i(size, 5), glyph, glyph);
-                }
-            }
-        }
-    }
-    retain_directory(retain_directory, "res://assets/resources/img/transition");
-    retain_directory(retain_directory, "res://assets/resources/audio/sfx");
-    if (scene_kind == 0) {
-        retain_directory(retain_directory, "res://assets/resources/img/startup");
-    } else if (scene_kind == 1) {
-        retain_directory(retain_directory, "res://assets/resources/img/mainmenu");
-        retain_directory(retain_directory, "res://assets/resources/img/characterselect");
-        retain_directory(retain_directory, "res://assets/resources/img/infalsus");
+        // Main-menu assets load on demand as the scene is built. Avoid
+        // synchronously retaining whole content folders and pre-rasterizing
+        // every catalog glyph during the scene transition.
         content::song_title("");
     } else {
+        retain_directory(retain_directory, "res://assets/resources/font/mainmenu");
+        retain_directory(retain_directory, "res://assets/resources/img/transition");
+        retain_directory(retain_directory, "res://assets/resources/audio/sfx");
+    }
+    if (scene_kind == 0) {
+        retain_directory(retain_directory, "res://assets/resources/img/startup");
+    } else if (scene_kind == 2) {
         retain_directory(retain_directory, "res://assets/resources/img/konzetsu");
         retain_directory(retain_directory, "res://assets/resources/audio/konzetsu");
     }
@@ -209,8 +191,10 @@ void ClientScreen::_bind_methods() {
     ClassDB::bind_method(D_METHOD("on_music_finished"), &ClientScreen::on_music_finished);
     ClassDB::bind_method(D_METHOD("on_menu_action", "action"), &ClientScreen::on_menu_action);
     ClassDB::bind_method(D_METHOD("open_character_select"), &ClientScreen::open_character_select);
+    ClassDB::bind_method(D_METHOD("position_hub_portrait", "slide_offset"), &ClientScreen::position_hub_portrait);
     ClassDB::bind_method(D_METHOD("close_character_select"), &ClientScreen::close_character_select);
     ClassDB::bind_method(D_METHOD("menu_http_completed", "result", "response_code", "headers", "body"), &ClientScreen::menu_http_completed);
+    ClassDB::bind_method(D_METHOD("konzetsu_tasks_completed", "result", "response_code", "headers", "body"), &ClientScreen::konzetsu_tasks_completed);
     ClassDB::bind_method(D_METHOD("menu_hover", "which", "hovered"), &ClientScreen::menu_hover);
     ClassDB::bind_method(D_METHOD("select_character", "id"), &ClientScreen::select_character);
     ClassDB::bind_method(D_METHOD("open_partner_details"), &ClientScreen::open_partner_details);
@@ -228,6 +212,11 @@ void ClientScreen::_bind_methods() {
     ClassDB::bind_method(D_METHOD("filter_characters", "query"), &ClientScreen::filter_characters);
     ClassDB::bind_method(D_METHOD("toggle_all_characters"), &ClientScreen::toggle_all_characters);
     ClassDB::bind_method(D_METHOD("return_to_menu"), &ClientScreen::return_to_menu);
+    ClassDB::bind_method(D_METHOD("open_konzetsu_challenge", "id"), &ClientScreen::open_konzetsu_challenge);
+    ClassDB::bind_method(D_METHOD("close_konzetsu_challenge"), &ClientScreen::close_konzetsu_challenge);
+    ClassDB::bind_method(D_METHOD("confirm_konzetsu_challenge"), &ClientScreen::confirm_konzetsu_challenge);
+    ClassDB::bind_method(D_METHOD("set_konzetsu_progress", "completed_songs"), &ClientScreen::set_konzetsu_progress);
+    ADD_SIGNAL(MethodInfo("konzetsu_challenge_requested", PropertyInfo(Variant::INT, "challenge_index")));
     ClassDB::bind_method(D_METHOD("startup_request_completed", "result", "response_code", "headers", "body"), &ClientScreen::startup_request_completed);
     ClassDB::bind_method(D_METHOD("startup_download_completed", "result", "response_code", "headers", "body", "slot"), &ClientScreen::startup_download_completed);
     ClassDB::bind_method(D_METHOD("startup_submit_login"), &ClientScreen::startup_submit_login);
@@ -237,6 +226,7 @@ void ClientScreen::_bind_methods() {
 }
 
 void ClientScreen::_ready() {
+    switching = false;  // Reset scene transition flag
 #if defined(_WIN32)
     install_aspect_window_proc();
 #endif
@@ -245,7 +235,7 @@ void ClientScreen::_ready() {
     stage->set_name("DesignCanvas");
     add_child(stage);
     stage->set_z_index(1);
-    stage->set_size(Vector2(W, scene_kind == 0 ? STARTUP_VIRTUAL_H : H));
+    stage->set_size(Vector2(W, H));
     stage->set_mouse_filter(Control::MOUSE_FILTER_PASS);
     prepare_scene_resources();
     if (scene_kind == 0) {
@@ -256,12 +246,26 @@ void ClientScreen::_ready() {
         add_child(startup_http);
         startup_http->connect("request_completed", Callable(this, "startup_request_completed"));
     }
+    if (scene_kind == 2 && get_tree()->has_meta("konzetsu_pending_clear_mask")) {
+        konzetsu_pending_clear_mask = int(get_tree()->get_meta("konzetsu_pending_clear_mask"));
+        get_tree()->remove_meta("konzetsu_pending_clear_mask");
+    }
+    if (scene_kind == 2 && get_tree()->has_meta("konzetsu_daily_tasks")) {
+        const Variant tasks = get_tree()->get_meta("konzetsu_daily_tasks");
+        if (tasks.get_type() == Variant::ARRAY) set_konzetsu_tasks(Array(tasks));
+    }
     if (scene_kind == 0) build_startup();
     else if (scene_kind == 1) build_menu();
     else build_konzetsu();
     if (scene_kind == 1 || scene_kind == 2) ClientTransition::get_or_create(get_tree());
     layout();
-    if (scene_kind == 1) prepare_menu_dialogs();
+    if (scene_kind == 1) {
+        prepare_menu_dialogs();
+        layout();
+        // Keep the scene transition gated only on constructing the menu, not
+        // on decoding every optional character portrait in the background.
+        scene_assets_ready = true;
+    }
     if (scene_kind == 2) scene_assets_ready = true;
 }
 
@@ -279,6 +283,7 @@ void ClientScreen::_notification(int what) {
 
 void ClientScreen::constrain_window_aspect() {
 #if defined(_WIN32)
+    lock_window_aspect = scene_kind == 1;
     install_aspect_window_proc();
 #endif
 }
@@ -440,20 +445,21 @@ static void cover_window(Node *node, float extra_x, float extra_y) {
 void ClientScreen::layout() {
     Vector2 size = get_size();
     const bool startup_canvas = scene_kind == 0;
-    const float logical_h = startup_canvas ? STARTUP_VIRTUAL_H : H;
-    // Startup is laid out on a 4:3 virtual canvas. A 16:9 display simply
-    // clips its lower 360 logical pixels instead of rescaling the page.
-    const float scale_height = startup_canvas && size.y > 0 && size.x / size.y <= W / H
-        ? logical_h : H;
-    float scale = std::min(size.x / W, size.y / scale_height);
+    // The original Cocos project uses a 1920x1080 design resolution with
+    // fitHeight=true: narrow viewports crop the sides, while wide ones extend.
+    float scale = startup_canvas
+        ? size.y / H
+        : std::min(size.x / W, size.y / H);
     if (scale <= 0) return;
     stage->set_scale(Vector2(scale, scale));
-    stage->set_size(Vector2(W, logical_h));
+    stage->set_size(Vector2(W, H));
     stage->set_position(startup_canvas
         ? Vector2((size.x - W * scale) * .5f, 0)
         : (size - Vector2(W, H) * scale) / 2);
-    const float extra_x = std::max(0.f, size.x / scale - W);
-    const float extra_y = std::max(0.f, size.y / scale - H);
+    const float extra_x = startup_canvas
+        ? size.x / scale - W
+        : std::max(0.f, size.x / scale - W);
+    const float extra_y = startup_canvas ? 0.f : std::max(0.f, size.y / scale - H);
     design_extra = extra_x;
     design_extra_y = extra_y;
     const float shift = extra_x * .5f;
@@ -473,27 +479,15 @@ void ClientScreen::layout() {
             else if (name == "BottomBar")
                 place_vertical(node, extra_y * .5f);
         }
-        if (Control *portrait = Object::cast_to<Control>(stage->get_node_or_null(
-                NodePath("PartnerIllustration")))) {
-            // Cocos Creator design x=-330 is relative to the 1920-wide
-            // canvas. Keep that anchor and compensate for the centered extra
-            // width on ultrawide displays on every layout pass.
-            const Vector2 psize = portrait->get_size();
-            portrait->set_position(Vector2(
-                W * .5f - 330.f - psize.x * .5f - shift,
-                H * .5f + 225.f - psize.y * .5f));
-        }
+        position_hub_portrait(hub_portrait_slide_offset);
         if (Control *background = Object::cast_to<Control>(stage->get_node_or_null(NodePath("Background"))))
             if (TextureRect *sprite = Object::cast_to<TextureRect>(background))
                 sprite->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
     } else if (scene_kind == 2) {
-        for (const char *key : {"HubBg", "LoadingBg", "BgGlow"}) {
-            const auto found = art.find(key);
-            if (found == art.end()) continue;
-            place_wide(found->second, -shift, extra_x);
-            if (TextureRect *sprite = Object::cast_to<TextureRect>(found->second))
-                sprite->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
-        }
+        // The stage remains centered: backgrounds fill the visible rect,
+        // while the hub and rotating loading artwork keep their proportions.
+        place_vertical(art["HubBack"], -extra_y * .5f);
+        place_vertical(art["BottomDiamond"], extra_y * .5f);
     }
     if (character_dialog) {
         adapt_partner_select(character_dialog, extra_x, extra_y);
@@ -510,10 +504,21 @@ void ClientScreen::layout() {
                 filter_characters(search->get_text());
     }
     cover_window(stage, extra_x, extra_y);
+    if (scene_kind == 2) {
+        const Vector2 visible_size(W + extra_x, H + extra_y);
+        const Vector2 visible_origin(-extra_x * .5f, -extra_y * .5f);
+        for (const char *key : {"HubBg", "LoadingBg", "BgGlow"}) {
+            if (TextureRect *sprite = Object::cast_to<TextureRect>(art[key])) {
+                sprite->set_position(visible_origin);
+                sprite->set_size(visible_size);
+                sprite->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+            }
+        }
+    }
     if (startup_canvas && startup_activity && !startup_login_panel) {
         // Port StartupConfig.activityIconPose() from the Cocos viewport into
         // the scaled Godot stage, then into the icon's actual parent space.
-        const float cocos_fit = std::min(size.x / (W / 1.5f), size.y / (H / 1.5f));
+        const float cocos_fit = size.y / (H / 1.5f);
         const Vector2 screen_point(size.x - 47.f * cocos_fit, size.y - 70.f * cocos_fit);
         const Vector2 stage_point = (screen_point - stage->get_position()) / scale;
         Vector2 parent_point = stage_point;
@@ -524,13 +529,15 @@ void ClientScreen::layout() {
         }
         startup_activity->set_position(parent_point - startup_activity->get_size() * .5f);
     }
-    if (startup_canvas && title_art) {
-        if (!title_art->has_meta("startup_home_pos")) title_art->set_meta("startup_home_pos", title_art->get_position());
-        const Vector2 home = title_art->get_meta("startup_home_pos");
-        title_art->set_position(home + Vector2(0, extra_y * .5f));
-    }
     if (video) attach_startup_video(this, video);
     if (title_video) attach_startup_video(this, title_video);
+    if (flash) {
+        // WhiteFlash must cover the real viewport, not the 1920x1080 design
+        // canvas. Keep it outside the scaled startup stage so no aspect ratio
+        // can expose uncovered strips during the title transition.
+        flash->set_position(Vector2(0, 0));
+        flash->set_size(size);
+    }
 }
 
 void ClientScreen::play_music(const String &intro, const String &repeat) {
@@ -641,8 +648,12 @@ void ClientScreen::begin_intro() {
     if (Node *black = stage->find_child("StartupBlack", false, false))
         if (auto *item = Object::cast_to<Control>(black)) item->set_visible(false);
     video->show();
-    if (music == nullptr || !music->is_playing()) play_music("bgm/title_full.ogg", "bgm/title_loop.ogg");
+    // Sync music start with video start for better A/V sync
+    if (music == nullptr || !music->is_playing()) {
+        play_music("bgm/title_full.ogg", "bgm/title_loop.ogg");
+    }
     video->start();
+    // Ensure clock resets after both media start for accurate sync
     clock = 0;
 }
 
@@ -670,12 +681,12 @@ void ClientScreen::begin_title() {
     const float peak = native_mode == 1 ? 1.f : 124.f / 255.f;
     flash = memnew(ColorRect);
     flash->set_name("WhiteFlash");
-    flash->set_z_index(2);
+    flash->set_z_index(100);
     flash->set_color(Color(1, 1, 1));
     flash->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-    flash->set_size(Vector2(W, H));
+    add_child(flash);
+    flash->set_size(get_size());
     set_alpha(flash, 0);
-    stage->add_child(flash);
     layout();
     video->set_native_white(0);
 }
@@ -683,6 +694,26 @@ void ClientScreen::begin_title() {
 void ClientScreen::mark_content_ready() { content_ready = true; }
 
 void ClientScreen::_input(const Ref<InputEvent> &event) {
+    // Handle intro video skip on click/touch
+    if (startup_state == 1 && event.is_valid()) {
+        bool should_skip = false;
+        Ref<InputEventMouseButton> mouse = event;
+        Ref<InputEventScreenTouch> touch = event;
+        if (mouse.is_valid() && mouse->is_pressed() && mouse->get_button_index() == MOUSE_BUTTON_LEFT) {
+            should_skip = true;
+        } else if (touch.is_valid() && touch->is_pressed()) {
+            should_skip = true;
+        }
+        if (should_skip) {
+            // Skip to title video and seek music to 9.9s
+            if (music && music->is_playing()) {
+                music->seek(9.9);
+            }
+            begin_title();
+            return;
+        }
+    }
+    
     ScrollContainer *scroll = dialog_view_all ? dialog_all_list : dialog_list;
     if (!dialog_active || dialog_closing || !scroll || !event.is_valid()) {
         partner_scroll_pointer_active = false;
@@ -839,19 +870,156 @@ void ClientScreen::_unhandled_input(const Ref<InputEvent> &event) {
 void ClientScreen::on_menu_action(int action) {
     if (switching) return;
     if (action == 1) {
-        switching = true;
         play_sfx("sfx/06_LesserButtonClickV2.ogg");
-        ClientTransition::get_or_create(get_tree())->switch_to("res://Godot/Scenes/Konzetsu.tscn");
+        begin_konzetsu_tasks_request();
     } else if (action == 2) {
         play_sfx("sfx/08_TimelineNodeClick.ogg");
     }
 }
 
 void ClientScreen::return_to_menu() {
-    if (switching || clock < 4.35) return;
+    // Remove clock restriction for offline preview mode
+    if (switching || konzetsu_pending_clear_mask || (konzetsu_dialog && konzetsu_dialog->is_visible())) return;
     switching = true;
     play_sfx("konzetsu/ui_close.wav");
     ClientTransition::get_or_create(get_tree())->switch_to("res://Godot/Scenes/MainMenu.tscn");
+}
+
+void ClientScreen::begin_konzetsu_tasks_request() {
+    if (switching || konzetsu_task_request_pending || !konzetsu_http || !konzetsu_task_busy) return;
+    konzetsu_previous_tasks.clear();
+    const Variant previous = get_tree()->get_meta("konzetsu_daily_tasks", Variant());
+    if (previous.get_type() == Variant::ARRAY) konzetsu_previous_tasks = Array(previous).duplicate(true);
+    konzetsu_task_error = "";
+    konzetsu_task_busy->show();
+    stage->move_child(konzetsu_task_busy, stage->get_child_count() - 1);
+    konzetsu_task_busy->get_node<Control>("Dimmer")->set_modulate(Color(1, 1, 1, 0));
+    konzetsu_task_activity.begin(konzetsu_task_busy->get_node<Control>("ActivityIcon"));
+    konzetsu_task_finishing = false;
+    const String base = arcapi::resolve_base_url(
+        String(ProjectSettings::get_singleton()->get_setting("unfalsus/api_base_url", "")).strip_edges());
+    String request_base = base;
+    const String environment = OS::get_singleton()->get_environment("UNFALSUS_API_BASE_URL");
+    if (!environment.is_empty()) request_base = arcapi::resolve_base_url(environment.strip_edges());
+    Ref<ConfigFile> config;
+    config.instantiate();
+    if (config->load("user://startup.cfg") != OK || request_base.is_empty()) {
+        konzetsu_task_error = U"无法连接至服务器";
+        konzetsu_task_activity.end(konzetsu_task_busy->get_node<Control>("ActivityIcon"));
+        konzetsu_task_finishing = true;
+        return;
+    }
+    const String token = String(config->get_value("auth", "token", "")).trim_prefix("Bearer ").trim_prefix("bearer ");
+    if (token.is_empty()) {
+        konzetsu_task_error = U"请先登录";
+        konzetsu_task_activity.end(konzetsu_task_busy->get_node<Control>("ActivityIcon"));
+        konzetsu_task_finishing = true;
+        return;
+    }
+    PackedStringArray headers;
+    headers.push_back("Authorization: Bearer " + token);
+    headers.push_back("AppVersion: " + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.0.0")));
+    headers.push_back("Accept: application/json");
+    konzetsu_task_request_pending = true;
+    const Error err = konzetsu_http->request(request_base.trim_suffix("/") + "/user/task", headers);
+    if (err != OK) {
+        konzetsu_task_request_pending = false;
+        konzetsu_task_error = U"无法连接至服务器";
+        konzetsu_task_activity.end(konzetsu_task_busy->get_node<Control>("ActivityIcon"));
+        konzetsu_task_finishing = true;
+    }
+}
+
+void ClientScreen::set_konzetsu_tasks(const Array &tasks) {
+    if (tasks.size() != 5) return;
+    konzetsu_tasks = tasks;
+    konzetsu_tasks_loaded = true;
+    refresh_konzetsu_hub_visuals();
+}
+
+void ClientScreen::step_konzetsu_task_activity(double delta) {
+    if (!konzetsu_task_busy || !konzetsu_task_busy->is_visible()) return;
+    Control *icon = konzetsu_task_busy->get_node<Control>("ActivityIcon");
+    const bool done = konzetsu_task_activity.step(icon, delta);
+    const float alpha = std::clamp(float(konzetsu_task_finishing
+        ? konzetsu_task_dim_from * (1.0 - konzetsu_task_activity.fade_seconds / .2)
+        : .5 * std::sin(std::clamp(konzetsu_task_activity.seconds / .7, 0.0, 1.0) * 1.570796327)), 0.f, 1.f);
+    konzetsu_task_busy->get_node<Control>("Dimmer")->set_modulate(Color(1, 1, 1, alpha));
+    if (!konzetsu_task_finishing || !done) return;
+    konzetsu_task_finishing = false;
+    konzetsu_task_busy->hide();
+    if (!konzetsu_task_error.is_empty()) {
+        show_partner_message(konzetsu_task_error);
+        konzetsu_task_error = "";
+    }
+}
+
+void ClientScreen::konzetsu_tasks_completed(int result, int response_code, const PackedStringArray &, const PackedByteArray &body) {
+    konzetsu_task_request_pending = false;
+    const auto fail = [this](const String &message) {
+        konzetsu_task_error = message;
+        konzetsu_task_dim_from = konzetsu_task_busy->get_node<Control>("Dimmer")->get_modulate().a;
+        konzetsu_task_activity.end(konzetsu_task_busy->get_node<Control>("ActivityIcon"));
+        konzetsu_task_finishing = true;
+    };
+    if (result != HTTPRequest::RESULT_SUCCESS) {
+        fail(String(U"任务请求连接失败（网络结果：") + String::num_int64(result) + U"）");
+        return;
+    }
+    const String text = body.is_empty() ? String()
+        : String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).trim_prefix(String(U"\uFEFF")).strip_edges();
+    Ref<JSON> json;
+    json.instantiate();
+    const Error parse_error = json->parse(text);
+    const Variant parsed = parse_error == OK ? json->get_data() : Variant();
+    if (response_code < 200 || response_code >= 300) {
+        String message = String(U"任务请求失败（HTTP ") + String::num_int64(response_code) + U"）";
+        if (parsed.get_type() == Variant::DICTIONARY) {
+            const Dictionary response = parsed;
+            if (response.has("error_code")) message += String(U"\n服务端 error_code：") + String(response["error_code"]);
+        }
+        message += String(U"\n请求版本：") + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.0.0"));
+        fail(message);
+        return;
+    }
+    if (parse_error != OK) {
+        fail(String(U"任务响应 JSON 解析失败，第 ") + String::num_int64(json->get_error_line())
+            + String(U" 行：") + json->get_error_message());
+        return;
+    }
+    if (parsed.get_type() != Variant::DICTIONARY) {
+        fail(U"任务响应格式错误：JSON 顶层应为对象");
+        return;
+    }
+    const Dictionary root = parsed;
+    if (root.has("success") && root["success"] == Variant(false)) {
+        fail(String(U"服务端返回任务失败，error_code：") + String(root.get("error_code", U"未提供")));
+        return;
+    }
+    const Variant value = root.get("value", Variant());
+    if (value.get_type() != Variant::DICTIONARY) {
+        fail(U"任务响应格式错误：缺少 value 对象");
+        return;
+    }
+    const Variant tasks = Dictionary(value).get("tasks", Variant());
+    if (tasks.get_type() != Variant::ARRAY) {
+        fail(U"任务响应格式错误：缺少 value.tasks 数组");
+        return;
+    }
+    if (Array(tasks).size() != 5) {
+        fail(String(U"任务响应数量错误：预期 5 项，实际 ") + String::num_int64(Array(tasks).size()) + U" 项");
+        return;
+    }
+    for (int i = 0; i < 5; ++i) {
+        if (Array(tasks)[i].get_type() != Variant::DICTIONARY) {
+            fail(String(U"任务响应格式错误：第 ") + String::num_int64(i + 1) + U" 项应为对象");
+            return;
+        }
+    }
+    get_tree()->set_meta("konzetsu_pending_clear_mask", konzetsu_new_clear_mask(konzetsu_previous_tasks, Array(tasks)));
+    get_tree()->set_meta("konzetsu_daily_tasks", Array(tasks).duplicate(true));
+    switching = true;
+    ClientTransition::get_or_create(get_tree())->switch_to("res://Godot/Scenes/Konzetsu.tscn");
 }
 
 void ClientScreen::animate_character_select(double delta) {
@@ -951,14 +1119,86 @@ void ClientScreen::_exit_tree() {
 }
 
 void ClientScreen::_process(double delta) {
+    if (scene_kind == 2 && konzetsu_preload_image_index < konzetsu_preload_images.size()) {
+        const String &relative = konzetsu_preload_images[konzetsu_preload_image_index++];
+        if (!content::cached_image(relative).is_valid()) content::image(relative);
+    }
+    if (konzetsu_gallery_strip && konzetsu_gallery_cycle_width > 0) {
+        Vector2 position = konzetsu_gallery_strip->get_position();
+        position.x -= float(delta) * konzetsu_gallery_cycle_width / 45.f;
+        if (position.x <= -konzetsu_gallery_cycle_width) position.x += konzetsu_gallery_cycle_width;
+        konzetsu_gallery_strip->set_position(position);
+    }
+    if (konzetsu_gallery_strip) {
+        bool loaded_one_gallery_image = false;
+        for (int i = 0; i < konzetsu_gallery_strip->get_child_count(); ++i) {
+            auto *tile = Object::cast_to<TextureRect>(konzetsu_gallery_strip->get_child(i));
+            if (!tile || tile->get_texture().is_valid()) continue;
+            const String path = String(tile->get_meta("gallery_path", ""));
+            Ref<Texture2D> texture = content::cached_image(path);
+            if (!texture.is_valid() && !loaded_one_gallery_image
+                    && !bool(tile->get_meta("gallery_attempted", false))) {
+                UtilityFunctions::print(String("[gallery] attempt slot=")
+                    + String::num_int64(int(tile->get_meta("gallery_slot", 0)))
+                    + String(" path=") + path);
+                tile->set_meta("gallery_attempted", true);
+                loaded_one_gallery_image = true;
+                texture = content::image(path);
+            }
+            if (texture.is_valid() && !bool(tile->get_meta("gallery_loaded", false))) {
+                const int slot = int(tile->get_meta("gallery_slot", 0));
+                int copies = 0;
+                for (int j = 0; j < konzetsu_gallery_strip->get_child_count(); ++j) {
+                    auto *copy = Object::cast_to<TextureRect>(konzetsu_gallery_strip->get_child(j));
+                    if (copy && String(copy->get_meta("gallery_path", "")) == path) {
+                        ++copies;
+                        copy->set_texture(texture);
+                        copy->set_meta("gallery_loaded", true);
+                        copy->set_modulate(Color(1, 1, 1, 0));
+                        Ref<Tween> fade = copy->create_tween();
+                        fade->tween_property(copy, "modulate:a", 1.f, .35)
+                            ->set_delay(float(slot) * .1f);
+                    }
+                }
+                UtilityFunctions::print(String("[gallery] loaded slot=") + String::num_int64(slot)
+                    + String(" path=") + path + String(" copies=") + String::num_int64(copies));
+            }
+            else if (!texture.is_valid() && (content::image_failed(path)
+                    || bool(tile->get_meta("gallery_attempted", false)))
+                    && !konzetsu_gallery_unused.is_empty()) {
+                const String replacement_song = konzetsu_gallery_unused[0];
+                konzetsu_gallery_unused.remove_at(0);
+                const String replacement = String("songs/dl_") + replacement_song + "/1080_base.jpg";
+                UtilityFunctions::printerr(String("[gallery] replace slot=")
+                    + String::num_int64(int(tile->get_meta("gallery_slot", 0)))
+                    + String(" failed=") + path + String(" replacement=") + replacement);
+                const int slot = int(tile->get_meta("gallery_slot", 0));
+                for (int j = 0; j < konzetsu_gallery_strip->get_child_count(); ++j) {
+                    auto *copy = Object::cast_to<TextureRect>(konzetsu_gallery_strip->get_child(j));
+                    if (!copy || int(copy->get_meta("gallery_slot", -1)) != slot
+                            || String(copy->get_meta("gallery_path", "")) != path) continue;
+                    copy->set_meta("gallery_path", replacement);
+                    copy->set_meta("gallery_loaded", false);
+                    copy->set_meta("gallery_attempted", false);
+                    copy->set_meta("gallery_replacement_requested", false);
+                }
+            }
+        }
+    }
+    if (scene_kind == 1 && hub_portrait_slide_seconds < .45) {
+        hub_portrait_slide_seconds = std::min(.45, hub_portrait_slide_seconds + delta);
+        const float remaining = 1.f - float(hub_portrait_slide_seconds / .45);
+        position_hub_portrait(225.f * remaining * remaining * remaining);
+    }
     step_partner_purchase_activity(delta);
+    step_konzetsu_task_activity(delta);
+    if (switching && music && music->is_playing()) {
+        const float remaining = std::max(0.f, music->get_volume_linear() - float(delta / .85));
+        music->set_volume_linear(remaining);
+    }
     if (scene_kind == 1 && !menu_assets_ready) {
         menu_assets_ready = content::warmup_partner_assets_step(1);
-        if (!menu_assets_ready) return;
-        scene_assets_ready = true;
-        stage->show();
-        // Asset uploads can stall this frame; animation starts on the next one.
-        return;
+        if (menu_assets_ready) scene_assets_ready = true;
     }
     if (partner_scroll_clear_suppress > 0 && --partner_scroll_clear_suppress == 0)
         partner_scroll_suppress_click = false;
@@ -1066,7 +1306,6 @@ void ClientScreen::_process(double delta) {
                     else
                         video->play("res://assets/resources/video/startup/title.mp4", true);
                 }
-                if (flash) stage->move_child(flash, stage->get_child_count() - 1);
                 if (title_art) title_art->show();
                 startup_state = 3;
                 clock = 0;
@@ -1085,7 +1324,6 @@ void ClientScreen::_process(double delta) {
                 flash->queue_free();
                 flash = nullptr;
             }
-            if (switching && music) music->set_volume_linear(std::max(0.f, music->get_volume_linear() - float(delta)));
         }
         return;
     }
@@ -1098,7 +1336,7 @@ void ClientScreen::_process(double delta) {
         }
         return;
     }
-    if (scene_kind != 2 || ClientTransition::running()) return;
+    if (scene_kind != 2) return;
     clock += delta;
     if (!show_loading) {
         show_loading = true;
@@ -1116,6 +1354,10 @@ void ClientScreen::_process(double delta) {
     set_alpha(art["BgGlow"], first * (clock < 3.35 ? pulse : glow_at_fade) * hide_late);
     for (const char *name : {"GaugeDeco", "GaugeBg", "LoadingRune", "GaugeFill"}) set_alpha(art[name], second * hide_late);
     set_alpha(art["LoadingBg"], hide);
+    // Fade the button itself so revealing it never exposes opaque artwork.
+    const float back_progress = 1.f - hide_late;
+    set_alpha(art["HubBack"], back_progress * back_progress * (3.f - 2.f * back_progress));
+    if (art["HubBack"]) art["HubBack"]->set_visible(clock >= 3.35);
     if (auto *clip = art["GaugeClip"]) {
         const float u = std::clamp(float((clock - 1.45) / 1.2), 0.f, 1.f);
         clip->set_size(Vector2(float(clip->get_meta("full_width")) * (1 - std::pow(1 - u, 3)), clip->get_size().y));
@@ -1135,6 +1377,9 @@ void ClientScreen::_process(double delta) {
                 "RingMedium", "RingSmall", "CenterFrame", "GaugeDeco", "GaugeBg", "GaugeFill", "LoadingRune"}) {
             if (art[name]) art[name]->set_visible(false);
         }
-        if (art["HubBack"]) art["HubBack"]->set_visible(true);
+        if (TextureButton *back = Object::cast_to<TextureButton>(art["HubBack"]))
+            back->set_disabled(false);
+        if (!ClientTransition::covered() && konzetsu_preload_image_index >= konzetsu_preload_images.size())
+            step_konzetsu_clear_animation(delta);
     }
 }

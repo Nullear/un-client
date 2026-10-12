@@ -9,7 +9,12 @@
 namespace godot::content {
 String path(const String &relative);
 Ref<Texture2D> image(const String &relative);
+Ref<Texture2D> cached_image(const String &relative);
+bool image_failed(const String &relative);
+void begin_gallery_images(const PackedStringArray &relative_paths);
+void step_gallery_images();
 Array characters();
+PackedStringArray songs_with_rating_at_least(int rating);
 Dictionary character(const Array &catalog, int id);
 int selected();
 void save_selected(int id);

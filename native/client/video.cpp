@@ -62,6 +62,8 @@ struct HwLoop {
     int64_t first_pts = 0;
     int64_t epoch_pts = 0;
     std::chrono::steady_clock::time_point epoch_wall;
+    Vector4 color_profile = Vector4(1.5748f, .1873f, .4681f, 1.8556f);
+    bool full_color = false;
 
     static void copy_frame(HwLoop *hw, const uint8_t *src, AMediaFormat *format) {
         int32_t width = 0, height = 0, stride = 0, slice = 0, color = 21;
@@ -222,6 +224,30 @@ static HwLoop *start_hw_loop(const std::string &path, bool repeat) {
     AMediaFormat_getInt64(format, AMEDIAFORMAT_KEY_DURATION, &duration_us);
     hw->duration = double(duration_us) / 1000000.0;
     hw->loop = repeat;
+    
+    // Read color metadata from video track format (API 21+)
+    int32_t color_standard = 0;
+    int32_t color_range = 0;
+    if (AMediaFormat_getInt32(format, "color-standard", &color_standard)) {
+        // color-standard: 1=BT.601, 4=BT.709, 6=BT.2020
+        if (color_standard == 1) {
+            hw->color_profile = Vector4(1.402f, .344136f, .714136f, 1.772f);
+            UtilityFunctions::print("MediaCodec detected BT.601 color space");
+        } else {
+            hw->color_profile = Vector4(1.5748f, .1873f, .4681f, 1.8556f);
+            UtilityFunctions::print("MediaCodec detected BT.709 color space");
+        }
+    } else {
+        UtilityFunctions::print("MediaCodec using default BT.709 color space");
+    }
+    if (AMediaFormat_getInt32(format, "color-range", &color_range)) {
+        // color-range: 1=full, 2=limited
+        hw->full_color = (color_range == 1);
+        UtilityFunctions::print("MediaCodec color range: ", hw->full_color ? "full" : "limited");
+    } else {
+        UtilityFunctions::print("MediaCodec using default limited color range");
+    }
+    
     hw->codec = mime.empty() ? nullptr : AMediaCodec_createDecoderByType(mime.c_str());
     media_status_t configured = hw->codec
         ? AMediaCodec_configure(hw->codec, format, nullptr, nullptr, 0) : AMEDIA_ERROR_UNKNOWN;
@@ -330,10 +356,10 @@ void ClientVideo::publish_hw() {
         video->material.instantiate();
         video->material->set_shader(shader);
         video->material->set_shader_parameter("resolution", Vector2i(width, height));
-        video->material->set_shader_parameter("full_color", false);
+        video->material->set_shader_parameter("full_color", hw->full_color);
         video->material->set_shader_parameter("interlaced", 0);
         video->material->set_shader_parameter("rotation", 0.f);
-        video->material->set_shader_parameter("color_profile", Vector4(1.5748f, .1873f, .4681f, 1.8556f));
+        video->material->set_shader_parameter("color_profile", hw->color_profile);
         const char *names[] = {"y_data", "u_data", "v_data", "a_data"};
         for (int i = 0; i < 4; ++i) video->material->set_shader_parameter(names[i], video->planes[i]);
         video->picture = memnew(TextureRect);

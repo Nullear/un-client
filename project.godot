@@ -10,9 +10,9 @@ config_version=5
 
 [application]
 
-config/name="Un Falsus Online"
+config/name="Un Client"
 config/description="Godot C++ migration of the Un Falsus Online Cocos project"
-config/version="1.0.0"
+config/version="1.0.1"
 run/main_scene="res://Godot/Scenes/Startup.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 boot_splash/bg_color=Color(0, 0, 0, 1)
