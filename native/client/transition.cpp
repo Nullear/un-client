@@ -1,4 +1,5 @@
 #include "client.hpp"
+#include "content.hpp"
 
 #include <godot_cpp/classes/audio_stream.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
@@ -38,8 +39,7 @@ void ClientTransition::_ready() {
     mask->set_mouse_filter(Control::MOUSE_FILTER_STOP);
     mask->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
     mask->set_stretch_mode(TextureRect::STRETCH_SCALE);
-    Ref<Texture2D> background = ResourceLoader::get_singleton()->load(
-        "res://assets/resources/img/transition/Transition-BGAsset.png");
+    Ref<Texture2D> background = content::image("transition/Transition-BGAsset.png");
     mask->set_texture(background);
     Ref<Shader> shader = ResourceLoader::get_singleton()->load("res://native/client/transition.gdshader");
     material.instantiate();

@@ -24,7 +24,9 @@
 #include <godot_cpp/classes/scroll_container.hpp>
 #include <godot_cpp/classes/style_box_empty.hpp>
 #include <godot_cpp/classes/texture_button.hpp>
+#include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/classes/text_server.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/memory.hpp>
 
 #include <algorithm>
@@ -35,11 +37,27 @@ using namespace godot;
 
 namespace {
 static constexpr float W = 1920, H = 1080;
-static constexpr const char *ROOT = "res://assets/resources/img/";
-
+static bool menu_user_logged_in = false;
+static bool menu_online_available = false;
 static int64_t task_integer(const Dictionary &task, const Dictionary &state, const char *key, int64_t fallback = 0) {
     const Variant value = task.has(key) ? task[key] : state.get(key, Variant());
     return value.get_type() == Variant::NIL ? fallback : int64_t(value);
+}
+
+static Variant konzetsu_task_field(const Dictionary &task, const char *key) {
+    if (task.has(key)) return task[key];
+    const Dictionary req = task.get("req", Dictionary());
+    return req.get(key, Variant());
+}
+
+static String konzetsu_task_song(const Dictionary &task) {
+    return String(konzetsu_task_field(task, "song"));
+}
+
+static int konzetsu_task_difficulty(const Dictionary &task) {
+    Variant value = konzetsu_task_field(task, "difficulty");
+    if (value.get_type() == Variant::NIL) value = konzetsu_task_field(task, "diff");
+    return int(value);
 }
 
 static bool konzetsu_daily_task_complete(const Dictionary &task) {
@@ -59,6 +77,8 @@ static bool konzetsu_daily_task_complete(const Dictionary &task) {
             || id == "daily_break_total") return amount > 0 && current >= amount;
     if (id == "target_chart_score" || id == "target_chart_judgment_limit"
             || id == "daily_unplayed_song_clear") return current == 1;
+    if (id == "challenge_16_clear")
+        return current == 1 || bool(state.get("cleared", state.get("clear", false)));
     if (id == "daily_full_link_total" || id == "high_const_clear_total" || id == "daily_score_total")
         return progress > 0 && current >= progress;
     return false;
@@ -73,12 +93,28 @@ static bool konzetsu_all_daily_tasks_complete(const Array &tasks) {
     return true;
 }
 
+static int konzetsu_saved_completion_count() {
+    Ref<ConfigFile> snapshot;
+    snapshot.instantiate();
+    if (snapshot->load("user://konzetsu_tasks.cfg") != OK) return 0;
+    const Variant value = snapshot->get_value("tasks", "snapshot", Variant());
+    if (value.get_type() != Variant::ARRAY) return 0;
+    const Array tasks = value;
+    if (tasks.size() != 6 || tasks[5].get_type() != Variant::DICTIONARY
+            || String(Dictionary(tasks[5]).get("id", "")) != "challenge_16_clear") return 0;
+    int completed = 0;
+    for (int i = 0; i < tasks.size(); ++i)
+        if (tasks[i].get_type() == Variant::DICTIONARY
+                && konzetsu_daily_task_complete(Dictionary(tasks[i]))) ++completed;
+    return completed;
+}
+
 static Vector2 at(float x, float y, float w, float h, float ax = .5f, float ay = .5f) {
     return Vector2(W / 2 + x - w * ax, H / 2 - y - h * (1 - ay));
 }
 
 static Ref<Texture2D> load(const String &path) {
-    return ResourceLoader::get_singleton()->load(ROOT + path);
+    return content::image(path);
 }
 
 static TextureRect *place(Control *parent, const String &name, const String &path,
@@ -116,12 +152,12 @@ static Label *caption(Control *parent, const String &name, const String &value,
 }
 
 static TextureButton *art_button(Control *parent, const String &name, const String &normal,
-        const String &hover, float x, float y, float w, float h) {
+        const String &pressed, float x, float y, float w, float h) {
     auto *node = memnew(TextureButton);
     node->set_name(name);
     parent->add_child(node);
     node->set_texture_normal(load(normal));
-    if (!hover.is_empty()) node->set_texture_hover(load(hover));
+    if (!pressed.is_empty()) node->set_texture_pressed(load(pressed));
     node->set_ignore_texture_size(true);
     node->set_stretch_mode(TextureButton::STRETCH_SCALE);
     node->set_focus_mode(Control::FOCUS_NONE);
@@ -279,15 +315,11 @@ void ClientScreen::build_menu() {
     TextureButton *music_hit = art_button(stage, "MusicPlayHit", "mainmenu/btn-default.png", "mainmenu/btn-hover.png",
         680.3, 235.3, 280, 90);
     music_hit->connect("pressed", Callable(this, "on_menu_action").bind(1));
-    music_hit->connect("mouse_entered", Callable(this, "menu_hover").bind(1, 1));
-    music_hit->connect("mouse_exited", Callable(this, "menu_hover").bind(1, 0));
     art_button(stage, "TutorialHit", "mainmenu/btn-replaytutorial.png", "mainmenu/btn-replaytutorial-hover.png",
         628.5, 381.6, 340, 75);
     TextureButton *timeline_hit = art_button(stage, "TimelineHit", "mainmenu/btn-default.png", "mainmenu/btn-hover.png",
         680.6, -35.2, 280, 90);
     timeline_hit->connect("pressed", Callable(this, "on_menu_action").bind(2));
-    timeline_hit->connect("mouse_entered", Callable(this, "menu_hover").bind(2, 1));
-    timeline_hit->connect("mouse_exited", Callable(this, "menu_hover").bind(2, 0));
     art_button(stage, "SettingsHit", "mainmenu/button-menu.png", "mainmenu/button-menu-hover.png",
         624.7, 501.7, 89.5, 70);
 
@@ -296,15 +328,21 @@ void ClientScreen::build_menu() {
     const Color ink(15.f / 255, 25.f / 255, 36.f / 255);
     const Color teal(66.f / 255, 199.f / 255, 198.f / 255);
     caption(stage, "PlayerTag", U"玩家", -833.5, 435, 54, 11, ink, true, true);
-    caption(stage, "MusicTitleShadow", U"音乐游玩", 36.119, 379.97, 300, 26, Color(cyan_title.r, cyan_title.g, cyan_title.b, 66.f / 255), false, true);
-    caption(stage, "MusicTitle", U"音乐游玩", 37.111, 380.957, 300, 26, cyan_title, false, true);
+    caption(stage, "MusicTitleShadow", U"探索", 36.119, 379.97, 300, 26, Color(cyan_title.r, cyan_title.g, cyan_title.b, 66.f / 255), false, true);
+    caption(stage, "MusicTitle", U"探索", 37.111, 380.957, 300, 26, cyan_title, false, true);
     caption(stage, "DifficultyShadow", U"进化", 85.131, 256.696, 220, 15, Color(teal.r, teal.g, teal.b, 57.f / 255), false, true);
     caption(stage, "Difficulty", U"进化", 86.098, 257.664, 220, 15, teal, false, true);
-    caption(stage, "Unlocked", U"已解锁", 110.855, 230.555, 110, 11, cyan, false, true);
-    caption(stage, "UnlockedValue", "05/234", 134.786, 209.934, 120, 19, cyan, false, true);
+    caption(stage, "Unlocked", U"日期", 110.855, 230.555, 110, 11, cyan, false, true);
+    const Dictionary date = Time::get_singleton()->get_date_dict_from_system(false);
+    const int month = int(date.get("month", 1));
+    const int day = int(date.get("day", 1));
+    const String date_text = (month < 10 ? String("0") : String()) + String::num_int64(month)
+        + "/" + (day < 10 ? String("0") : String()) + String::num_int64(day);
+    caption(stage, "UnlockedValue", date_text, 134.786, 209.934, 120, 19, cyan, false, true);
     caption(stage, "Cleared", U"已完成", 245.83, 230.745, 100, 11, cyan, false, true);
-    caption(stage, "ClearedValue", "05/234", 270.423, 209.148, 120, 19, cyan, false, true);
-    caption(stage, "SelectSong", U"选择歌曲", 679.154, 226.761, 250, 23, cyan, true, true);
+    caption(stage, "ClearedValue", String::num_int64(konzetsu_saved_completion_count()) + "/6",
+        270.423, 209.148, 120, 19, cyan, false, true);
+    caption(stage, "SelectSong", U"每日任务", 679.154, 226.761, 250, 23, cyan, true, true);
     caption(stage, "ReplayTutorial", U"重播教程", 659.884, 379.375, 280, 20, Color(193.f / 255, 224.f / 255, 227.f / 255), true, true);
     caption(stage, "ScenarioTitleShadow", U"剧情", 116.16, 110.196, 260, 26, Color(cyan_title.r, cyan_title.g, cyan_title.b, 66.f / 255), false, true);
     caption(stage, "ScenarioTitle", U"剧情", 117.158, 111.206, 260, 26, cyan_title, false, true);
@@ -360,8 +398,8 @@ void ClientScreen::build_konzetsu() {
         else if (task_id == "daily_full_link_total") image_path = "img/clear_fl.png";
         else if (task_id == "daily_unplayed_song_clear") image_path = "img/new_badge.png";
         else if (task_id == "any_song_perfect_or_clear_twice") image_path = "img/clear_pd.png";
-        else if (!String(task.get("song", "")).is_empty())
-            image_path = String("songs/dl_") + String(task.get("song", "")) + "/1080_base.jpg";
+        else if (!konzetsu_task_song(task).is_empty())
+            image_path = String("songs/dl_") + konzetsu_task_song(task) + "/1080_base.jpg";
         if (!image_path.is_empty() && std::find(konzetsu_preload_images.begin(),
                 konzetsu_preload_images.end(), image_path) == konzetsu_preload_images.end())
             konzetsu_preload_images.push_back(image_path);
@@ -529,11 +567,11 @@ void ClientScreen::refresh_konzetsu_hub_visuals() {
     const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
         "HubCenterChainRight", "HubBottomChainLeft", "HubBottomChainRight"};
     for (int i = 0; i < 6; ++i) {
-        const bool cleared = i < 5 && konzetsu_tasks.size() > i
+        const bool cleared = konzetsu_tasks.size() > i
             && !(konzetsu_pending_clear_mask & (1 << i))
             && konzetsu_tasks[i].get_type() == Variant::DICTIONARY
             && konzetsu_daily_task_complete(Dictionary(konzetsu_tasks[i]));
-        const bool completed = i < 5 && all_complete;
+        const bool completed = i < 5 ? all_complete : cleared;
         const bool center_chain_cleared = cleared
             || (i == 5 && !String(konzetsu_completed_songs.get(6, "")).is_empty());
         if (Control *chain = art[center_chains[i]])
@@ -567,14 +605,14 @@ void ClientScreen::refresh_konzetsu_hub_visuals() {
 }
 
 int ClientScreen::konzetsu_new_clear_mask(const Array &previous, const Array &tasks) {
-    if (previous.size() != 5 || tasks.size() != 5) return 0;
+    if (previous.size() != 6 || tasks.size() != 6) return 0;
     int mask = 0;
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         if (previous[i].get_type() != Variant::DICTIONARY || tasks[i].get_type() != Variant::DICTIONARY) continue;
         const Dictionary before = previous[i], after = tasks[i];
         // A replacement daily task has no previously observed completion transition.
         bool same_task = true;
-        for (const char *key : {"id", "song", "difficulty", "req", "amount"})
+        for (const char *key : {"id", "song", "difficulty"})
             if (before.get(key, Variant()) != after.get(key, Variant())) same_task = false;
         if (same_task && !konzetsu_daily_task_complete(before) && konzetsu_daily_task_complete(after)) mask |= 1 << i;
     }
@@ -588,8 +626,8 @@ void ClientScreen::step_konzetsu_clear_animation(double delta) {
     const float fade = std::clamp(float(konzetsu_clear_seconds / .7), 0.f, 1.f);
     const float chain_fade = std::clamp(float(konzetsu_clear_seconds / .3), 0.f, 1.f);
     const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
-        "HubCenterChainRight", "HubBottomChainLeft"};
-    for (int i = 0; i < 5; ++i) {
+        "HubCenterChainRight", "HubBottomChainLeft", "HubBottomChainRight"};
+    for (int i = 0; i < 6; ++i) {
         if (!(konzetsu_pending_clear_mask & (1 << i))) continue;
         const String prefix = "HubNode" + String::num_int64(i + 1);
         for (const char *suffix : {"Hit", "Number", "Swirl", "Dim", "Badge", "Ripple", "Chain"}) {
@@ -599,12 +637,14 @@ void ClientScreen::step_konzetsu_clear_animation(double delta) {
                 node->set_modulate(Color(1, 1, 1, disappearing ? 1.f - fade : fade));
             }
         }
-        if (Control *chain = art[center_chains[i]]) chain->set_modulate(Color(1, 1, 1, 1.f - chain_fade));
+        if (i < 5)
+            if (Control *chain = art[center_chains[i]]) chain->set_modulate(Color(1, 1, 1, 1.f - chain_fade));
     }
     if (konzetsu_clear_seconds >= .7) {
         konzetsu_pending_clear_mask = 0;
         konzetsu_clear_seconds = -1;
         refresh_konzetsu_hub_visuals();
+        save_konzetsu_task_snapshot();
     }
 }
 
@@ -628,7 +668,7 @@ void ClientScreen::open_konzetsu_challenge(int id) {
     if (konzetsu_dialog && konzetsu_dialog->is_visible()) return;
     const char *titles_zh[] = {"I. 晦涩之道", "II. 扭曲之道", "III. 无极之道",
         "IV. 残缺之道", "V. 无形之道", "VI."};
-    const char *task_title_prefixes[] = {"I.", "II.", "III.", "IV.", "V."};
+    const char *task_title_prefixes[] = {"I.", "II.", "III.", "IV.", "V.", "VI."};
     const char *hints_zh[] = {"培养对不可察觉之物的感知。", "挣脱时间的桎梏。",
         "重构世界。", "稍歇一会，便再度迈步吧。",
         "伸手，触碰那不可能之物。", "开拓。"};
@@ -653,10 +693,11 @@ void ClientScreen::open_konzetsu_challenge(int id) {
     bool any_song_perfect = false;
     bool daily_full_link = false;
     bool daily_rating_14 = false;
+    bool hard_skill_partner_clear = false;
     int64_t task_current = 0;
     String current_score;
     String target_score;
-    if (id <= 5 && konzetsu_tasks_loaded && konzetsu_tasks.size() >= id) {
+    if (konzetsu_tasks_loaded && konzetsu_tasks.size() >= id) {
         const Dictionary task = konzetsu_tasks[id - 1];
         const Dictionary req = task.get("req", Dictionary());
         const Dictionary state = task.get("state", Dictionary());
@@ -680,9 +721,9 @@ void ClientScreen::open_konzetsu_challenge(int id) {
         if (String(task.get("id", "")) == "target_chart_score") {
             task_title = U"登临之道";
             task_story = "";
-            const String song_id = String(task.get("song", ""));
+            const String song_id = konzetsu_task_song(task);
             task_song_id = song_id;
-            const int difficulty = int(task.get("difficulty", 0));
+            const int difficulty = konzetsu_task_difficulty(task);
             const String difficulty_name = difficulty == 2 ? "ULT"
                 : difficulty == 3 || difficulty == 4 ? "FBD" : String::num_int64(difficulty);
             String score_w = String::num(double(task.get("progress", 0)) / 10000.0, 2);
@@ -695,8 +736,8 @@ void ClientScreen::open_konzetsu_challenge(int id) {
         }
         if (String(task.get("id", "")) == "target_chart_judgment_limit") {
             task_title = U"无痕之道";
-            task_song_id = String(task.get("song", ""));
-            const int difficulty = int(task.get("difficulty", 0));
+            task_song_id = konzetsu_task_song(task);
+            const int difficulty = konzetsu_task_difficulty(task);
             const String difficulty_name = difficulty == 2 ? "ULT"
                 : difficulty == 3 || difficulty == 4 ? "FBD" : String::num_int64(difficulty);
             task_hint = String(U"通关「")
@@ -706,7 +747,7 @@ void ClientScreen::open_konzetsu_challenge(int id) {
         }
         if (String(task.get("id", "")) == "target_chart_dual_difficulty_clear") {
             task_title = U"双生之道";
-            task_song_id = String(task.get("song", ""));
+            task_song_id = konzetsu_task_song(task);
             const String both_charts = String(U"通关「") + content::song_title(task_song_id)
                 + String(U"」[ULT] [FBD] 各 1 次");
             task_hint = current == 1 ? both_charts.replace("[ULT] ", "")
@@ -715,13 +756,13 @@ void ClientScreen::open_konzetsu_challenge(int id) {
         if (String(task.get("id", "")) == "target_chart_perfect_or_clear_twice") {
             target_chart_perfect = true;
             task_title = U"无暇之道";
-            task_song_id = String(task.get("song", ""));
+            task_song_id = konzetsu_task_song(task);
             task_hint = String(U"PERFECT DIVE 通关「") + content::song_title(task_song_id) + String(U"」");
         }
         if (String(task.get("id", "")) == "target_chart_link_or_clear_twice") {
             target_chart_link = true;
             task_title = U"连绵之道";
-            task_song_id = String(task.get("song", ""));
+            task_song_id = konzetsu_task_song(task);
             task_hint = String(U"FULL LINK 通关「") + content::song_title(task_song_id) + String(U"」");
         }
         if (task_id == "shiny_pure_total") {
@@ -768,6 +809,15 @@ void ClientScreen::open_konzetsu_challenge(int id) {
             task_title = U"无形之道";
             task_art_path = "img/clear_pd.png";
             task_hint = U"获得 PERFECT DIVE";
+        } else if (task_id == "challenge_16_clear") {
+            hard_skill_partner_clear = true;
+            task_title = String(task.get("name", U"困难之道"));
+            task_song_id = konzetsu_task_song(task);
+            const int difficulty = konzetsu_task_difficulty(task);
+            const String difficulty_name = difficulty == 2 ? "ULT"
+                : difficulty == 3 || difficulty == 4 ? "FBD" : String::num_int64(difficulty);
+            task_hint = String(U"使用包含「困难」技能的搭档通关「")
+                + content::song_title(task_song_id) + String(U"」[") + difficulty_name + String(U"]");
         }
     }
     const bool distinct = konzetsu_all_daily_tasks_complete(konzetsu_tasks);
@@ -1003,6 +1053,26 @@ void ClientScreen::open_konzetsu_challenge(int id) {
             ? font->get_string_size(U"获得 ", HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x : 0.f;
         set_local_text_rect(note, (content_width - hint_width + phrase_width - note_width) * .5f + prefix_width,
             hint->get_position().y - note->get_size().y, note_width, note->get_size().y);
+    }
+    if (hard_skill_partner_clear && task_hint_font.is_valid()) {
+        constexpr int hint_size = 30;
+        constexpr int note_size = 18;
+        const float hint_width = task_hint_font->get_string_size(display_hint,
+            HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size).x;
+        const float prefix_width = task_hint_font->get_string_size(U"使用包含「困难」技能的搭档",
+            HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size).x;
+        const float clear_width = task_hint_font->get_string_size(U"通关",
+            HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size).x;
+        const String note_text = U"或 FULL LINK";
+        const float note_width = task_hint_font->get_string_size(note_text,
+            HORIZONTAL_ALIGNMENT_LEFT, -1, note_size).x;
+        Label *note = caption(content, "HardSkillFullLinkNote", note_text, 0, 0,
+            note_width, note_size, Color(225.f / 255, 217.f / 255, 191.f / 255), true);
+        note->add_theme_font_override("font", task_hint_font);
+        set_local_text_rect(note,
+            (content_width - hint_width) * .5f + prefix_width + (clear_width - note_width) * .5f,
+            hint->get_position().y - note->get_size().y * .8f,
+            note_width, note->get_size().y);
     }
     const String action = konzetsu_dialog_mode == 2 ? "return" : konzetsu_dialog_mode == 1 ? "retrace" : "commence";
     const String normal = base + String("popup-btn-") + action + String(".png");
@@ -1250,9 +1320,11 @@ void ClientScreen::build_character_select() {
         + (last % 5 >= 2 ? cell_h * .5f + gap : 0);
     cells->set_custom_minimum_size(Vector2(817.5f, std::max(900.f, 30.f + last_row + cell_h + 150.f)));
     cells->set_size(cells->get_custom_minimum_size());
-    Ref<Texture2D> normal_border = load("characterselect/partner-border.png");
-    Ref<Texture2D> selected_border = load("characterselect/partner-border-sel.png");
+    Ref<Texture2D> normal_border = content::image("characterselect/partner-border.png");
+    Ref<Texture2D> selected_border = content::image("characterselect/partner-border-sel.png");
     Ref<Texture2D> lock_texture = load("characterselect/cell-lock2.png");
+    Ref<Texture2D> max_border = content::image("characterselect/partner-border-max.png");
+    Ref<Texture2D> awaken_border = content::image("characterselect/partner-border-awaken.png");
     for (int i = 0; i < int(ids.size()); ++i) {
         const int id = ids[i];
         Ref<Texture2D> icon = content::image("char/" + String::num_int64(id) + "_icon.png");
@@ -1279,10 +1351,17 @@ void ClientScreen::build_character_select() {
             frame->set_name("Border");
             cell->add_child(frame);
             frame->set_texture(border);
+            frame->set_meta("normal_border", normal_border);
+            frame->set_meta("max_border", max_border);
+            frame->set_meta("awaken_border", awaken_border);
             frame->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
             frame->set_stretch_mode(TextureRect::STRETCH_SCALE);
             frame->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-            const float width = (id == selected_character ? 234.f : 194.f) * .9f * 1.005f;
+            // Different border textures have different sizes:
+            // normal: 194x194, sel: 234x234, max/awaken: 248x246
+            const int cell_level = content::level_of(id);
+            float base_size = id == selected_character ? 234.f : (cell_level >= 20 ? 248.f : 194.f);
+            const float width = base_size * .9f * 1.005f;
             frame->set_size(Vector2(width, width));
             frame->set_position((Vector2(cell_w, cell_h) - frame->get_size()) / 2);
             if (id == selected_character) frame->set_material(content::hue_material(content::character(catalog, id)));
@@ -1367,7 +1446,7 @@ void ClientScreen::build_character_select() {
     Ref<Font> regular = unfalsus_ui::prepare_font("VivoSans-Regular-Full.ttf");
     if (regular.is_valid()) name->add_theme_font_override("font", regular);
     name->add_theme_color_override("font_outline_color", Color(12.f / 255, 12.f / 255, 16.f / 255));
-    name->add_theme_constant_override("outline_size", 5);
+    name->add_theme_constant_override("outline_size", 8);
     name->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
     unfalsus_ui::place_ccc(name, Vector2(1884, 127.5f), 1.f, .5f, 520, 68, 3);
     if (Label *view = Object::cast_to<Label>(dialog_chrome->get_node_or_null("ViewAllCaption"))) {
@@ -1380,7 +1459,7 @@ void ClientScreen::build_character_select() {
         800, 470, 440, 24, Color(1, 1, 1));
     if (regular.is_valid()) credit->add_theme_font_override("font", regular);
     credit->add_theme_color_override("font_outline_color", Color(12.f / 255, 12.f / 255, 16.f / 255));
-    credit->add_theme_constant_override("outline_size", 3);
+    credit->add_theme_constant_override("outline_size", 5);
     unfalsus_ui::place_ccc(credit, Vector2(1884, 42), 1.f, .5f, 500, 24, 2);
 
     const String skill_text = String(selected_row.get("skill_name", ""));
@@ -1398,7 +1477,7 @@ void ClientScreen::build_character_select() {
     skill->add_theme_font_size_override("font_size", 24);
     skill->add_theme_color_override("font_color", Color(1, 1, 1));
     skill->add_theme_color_override("font_outline_color", Color(12.f / 255, 12.f / 255, 16.f / 255));
-    skill->add_theme_constant_override("outline_size", 3);
+    skill->add_theme_constant_override("outline_size", 5);
     if (regular.is_valid()) skill->add_theme_font_override("font", regular);
     skill->set_clip_text(false);
     if (regular.is_valid()) search->add_theme_font_override("font", regular);
@@ -1423,7 +1502,7 @@ void ClientScreen::build_character_select() {
         label->add_theme_font_size_override("font_size", int(std::round(size * 1.5f)));
         label->add_theme_color_override("font_color", Color(1, 1, 1));
         label->add_theme_color_override("font_outline_color", Color(12.f / 255, 12.f / 255, 16.f / 255));
-        label->add_theme_constant_override("outline_size", 4);
+        label->add_theme_constant_override("outline_size", 6);
         label->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
         if (regular.is_valid()) label->add_theme_font_override("font", regular);
         label->set_clip_text(false);
@@ -1436,6 +1515,9 @@ void ClientScreen::build_character_select() {
     unfalsus_ui::place_ccc(lv, Vector2(W / 2 + (skill_x - 165.f - 640.f) * 1.5f, H / 2 - (155.f - 360.f) * 1.5f), 0.f, 0.f, 120, 24, 3);
     Label *level = aside_label("AsideLevel", "", 36);
     if (jamjuree.is_valid()) level->add_theme_font_override("font", jamjuree);
+    level->add_theme_color_override("font_color", Color(1, 1, 1));
+    level->add_theme_color_override("font_outline_color", Color(12.f / 255, 12.f / 255, 16.f / 255));
+    level->add_theme_constant_override("outline_size", 6);
     unfalsus_ui::place_ccc(level, Vector2(W / 2 + (skill_x - 143.f - 640.f) * 1.5f, H / 2 - (150.f - 360.f) * 1.5f), 0.f, 0.f, 180, 54, 3);
     place(dialog_chrome, "AsideLevelBar", "characterselect/lvl-bar.png",
         (skill_x - 165.f - 640.f) * 1.5f, (150.f - 360.f) * 1.5f, 496.f * .67f * 1.5f, 11.f * .67f * 1.5f, 0, 0);
@@ -1456,6 +1538,99 @@ void ClientScreen::build_character_select() {
     stripe->set_stretch_mode(TextureRect::STRETCH_SCALE);
     stripe->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
     stripe->set_size(Vector2(full, fill_h));
+    TextureButton *uncap_toggle = memnew(TextureButton);
+    uncap_toggle->set_name("AsideUncapToggle");
+    dialog_chrome->add_child(uncap_toggle);
+    const Ref<Texture2D> uncap_button = content::image("characterselect/skill-side-btn.png");
+    uncap_toggle->set_texture_normal(uncap_button);
+    uncap_toggle->set_texture_pressed(content::image("characterselect/skill-side-btn-pressed.png"));
+    uncap_toggle->set_ignore_texture_size(true);
+    uncap_toggle->set_stretch_mode(TextureButton::STRETCH_SCALE);
+    uncap_toggle->set_focus_mode(Control::FOCUS_NONE);
+    uncap_toggle->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
+    const Vector2 uncap_button_size = uncap_button.is_valid()
+        ? Vector2(uncap_button->get_width(), uncap_button->get_height()) * 1.5f
+        : Vector2(120, 78);
+    uncap_toggle->set_size(uncap_button_size);
+    uncap_toggle->set_pivot_offset(uncap_button_size * .5f);
+    uncap_toggle->set_scale(Vector2(.8f, .8f));
+    TextureButton *skill_toggle = memnew(TextureButton);
+    skill_toggle->set_name("AsideSkillToggle");
+    dialog_chrome->add_child(skill_toggle);
+    skill_toggle->set_texture_normal(uncap_button);
+    skill_toggle->set_texture_pressed(content::image("characterselect/skill-side-btn-pressed.png"));
+    skill_toggle->set_ignore_texture_size(true);
+    skill_toggle->set_stretch_mode(TextureButton::STRETCH_SCALE);
+    skill_toggle->set_focus_mode(Control::FOCUS_NONE);
+    skill_toggle->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
+    skill_toggle->set_size(uncap_button_size);
+    skill_toggle->set_pivot_offset(uncap_button_size * .5f);
+    skill_toggle->set_scale(Vector2(.8f, .8f));
+    Vector2 awaken_button_cocos(602.6f, 118.f);
+    if (Control *container = Object::cast_to<Control>(dialog_back->get_node_or_null("SkillContainer"))) {
+        const Vector2 size = container->get_size();
+        const float source_x = 857.6f;
+        const float source_y = 26.f;
+        const float source_h = size.y / 1.005f;
+        const float source_scale = 0.67f;
+        awaken_button_cocos = Vector2((source_x + 255.f),
+            source_y + source_h * source_scale * .5f + 24.f);
+    }
+    uncap_toggle->set_position(at((awaken_button_cocos.x - 640.f) * 1.5f,
+        (awaken_button_cocos.y - 360.f) * 1.5f, uncap_button_size.x, uncap_button_size.y));
+    uncap_toggle->set_visible(false);
+    uncap_toggle->connect("pressed", Callable(this, "toggle_partner_uncap"));
+    const Ref<Texture2D> awaken_texture = content::image("characterselect/awaken-icon.png");
+    auto *awaken = memnew(TextureRect);
+    awaken->set_name("AwakenIcon");
+    uncap_toggle->add_child(awaken);
+    awaken->set_texture(awaken_texture);
+    awaken->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+    awaken->set_stretch_mode(TextureRect::STRETCH_SCALE);
+    awaken->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+    const Vector2 awaken_size = awaken_texture.is_valid()
+        ? Vector2(awaken_texture->get_width(), awaken_texture->get_height()) * 1.5f
+        : uncap_button_size * .42f;
+    awaken->set_size(awaken_size);
+    awaken->set_pivot_offset(awaken_size * .5f);
+    awaken->set_scale(Vector2(.8f, .8f));
+    awaken->set_position((uncap_button_size - awaken_size) * .5f);
+    const Vector2 skill_button_cocos(awaken_button_cocos.x - 510.f, awaken_button_cocos.y);
+    skill_toggle->set_position(at((skill_button_cocos.x - 640.f) * 1.5f,
+        (skill_button_cocos.y - 360.f) * 1.5f, uncap_button_size.x, uncap_button_size.y));
+    skill_toggle->set_visible(false);
+    skill_toggle->connect("pressed", Callable(this, "toggle_partner_skill_seal"));
+    TextureRect *skill_icon = memnew(TextureRect);
+    skill_icon->set_name("SkillActiveIcon");
+    dialog_chrome->add_child(skill_icon);
+    const Ref<Texture2D> skill_active_texture = content::image("characterselect/skillactive-icon.png");
+    skill_icon->set_texture(skill_active_texture);
+    skill_icon->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+    skill_icon->set_stretch_mode(TextureRect::STRETCH_SCALE);
+    skill_icon->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+    const Vector2 skill_icon_size = skill_active_texture.is_valid()
+        ? Vector2(skill_active_texture->get_width(), skill_active_texture->get_height()) * 1.5f
+        : uncap_button_size * .42f;
+    skill_icon->set_size(skill_icon_size);
+    skill_icon->set_pivot_offset(skill_icon_size * .5f);
+    skill_icon->set_scale(Vector2(.8f, .8f));
+    skill_icon->set_position(at((skill_button_cocos.x - 640.f) * 1.5f,
+        (skill_button_cocos.y - 360.f) * 1.5f, skill_icon_size.x, skill_icon_size.y));
+    Label *skill_state_label = memnew(Label);
+    skill_state_label->set_name("SkillActiveText");
+    dialog_chrome->add_child(skill_state_label);
+    skill_state_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+    skill_state_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+    const Vector2 skill_label_size(uncap_button_size.x, 36.f);
+    skill_state_label->set_position(at((skill_button_cocos.x - 640.f) * 1.5f,
+        (skill_button_cocos.y + 20.f - 360.f) * 1.5f, skill_label_size.x, skill_label_size.y));
+    skill_state_label->set_size(skill_label_size);
+    skill_state_label->add_theme_font_size_override("font_size", 21);
+    Ref<Font> skill_font = unfalsus_ui::prepare_font("VivoSans-Regular-Full.ttf");
+    if (skill_font.is_valid()) skill_state_label->add_theme_font_override("font", skill_font);
+    skill_state_label->add_theme_color_override("font_color", Color(.745f, .725f, .796f));
+    skill_state_label->add_theme_color_override("font_outline_color", Color(79.f / 255, 61.f / 255, 85.f / 255));
+    skill_state_label->add_theme_constant_override("outline_size", 2);
     build_partner_chrome();
     apply_partner_aside(selected_character);
     layout();
@@ -1465,13 +1640,80 @@ void ClientScreen::apply_partner_aside(int id) {
     if (!character_dialog) return;
     const bool open = content::unlocked(id);
     dialog_locked_preview = !open;
+    if (TextureButton *toggle = Object::cast_to<TextureButton>(dialog_chrome->get_node_or_null("AsideSkillToggle"))) {
+        toggle->set_visible(open);
+        toggle->set_disabled(menu_http_kind != 0 || partner_uncap_toggle_id >= 0);
+        const bool sealed = content::skill_sealed();
+        if (TextureRect *icon = Object::cast_to<TextureRect>(dialog_chrome->get_node_or_null("SkillActiveIcon")))
+        {
+            icon->set_visible(open);
+            icon->set_texture(content::image(sealed
+                ? "characterselect/lock-icon.png"
+                : "characterselect/skillactive-icon.png"));
+        }
+        if (Label *text = Object::cast_to<Label>(dialog_chrome->get_node_or_null("SkillActiveText"))) {
+            text->set_visible(open);
+            text->set_text(sealed ? String(U"技能不可用") : String(U"技能生效中"));
+        }
+    }
+    if (TextureButton *toggle = Object::cast_to<TextureButton>(dialog_chrome->get_node_or_null("AsideUncapToggle"))) {
+        toggle->set_visible(open && content::uncapped(id));
+        toggle->set_disabled(menu_http_kind != 0 || partner_uncap_toggle_id >= 0);
+        if (TextureRect *icon = Object::cast_to<TextureRect>(toggle->get_node_or_null("AwakenIcon"))) {
+            const String icon_path = content::uncapped_override(id)
+                ? "characterselect/awaken-icon.png"
+                : "characterselect/awaken-icon-closed.png";
+            icon->set_texture(content::image(icon_path));
+        }
+    }
+    const String id_text = String::num_int64(id);
+    const bool use_u = content::uncapped_override(id);
+    for (Control *cell : dialog_cells) {
+        const int cell_id = int(cell->get_meta("character_id", -1));
+        if (cell_id == id) {
+            if (TextureButton *icon = Object::cast_to<TextureButton>(cell->get_node_or_null("Icon"))) {
+                Ref<Texture2D> texture = use_u ? content::image("char/" + id_text + "u_icon.png") : Ref<Texture2D>();
+                if (!texture.is_valid()) texture = content::image("char/" + id_text + "_icon.png");
+                if (texture.is_valid()) icon->set_texture_normal(texture);
+            }
+        }
+        const int cell_level = content::level_of(cell_id);
+        const bool cell_selected = cell_id == dialog_preview_character;
+        if (TextureRect *frame = Object::cast_to<TextureRect>(cell->get_node_or_null("Border"))) {
+            if (!cell_selected) {
+                const String key = cell_level == 30 ? "awaken_border"
+                    : cell_level >= 20 ? "max_border" : "normal_border";
+                Ref<Texture2D> frame_texture = frame->get_meta(key);
+                if (frame_texture.is_valid()) frame->set_texture(frame_texture);
+                // Update size based on border type
+                float base_size = cell_level >= 20 ? 248.f : 194.f;
+                const float width = base_size * .9f * 1.005f;
+                frame->set_size(Vector2(width, width));
+                frame->set_position((cell->get_size() - frame->get_size()) / 2);
+            }
+        }
+    }
+    const bool shows_level = open && menu_user_logged_in && menu_online_available;
     for (const char *name : {"AsideLv", "AsideLevel", "AsideLevelBar", "AsideLevelBarFill"}) {
         if (CanvasItem *node = Object::cast_to<CanvasItem>(character_dialog->find_child(name, true, false)))
-            node->set_visible(open);
+            node->set_visible(shows_level);
     }
     if (Label *level = Object::cast_to<Label>(character_dialog->find_child("AsideLevel", true, false))) {
         const int value = content::level_of(id);
-        level->set_text(value < 0 ? String() : String::num_int64(value));
+        const bool unknown_insight_level = content::insight_level_unknown(id, menu_user_logged_in);
+        level->set_text(unknown_insight_level ? String("???")
+            : value >= 0 ? String::num_int64(value)
+            : !open && menu_user_logged_in && menu_online_available ? String("20") : String());
+        Color text_color(1, 1, 1);
+        Color outline_color(12.f / 255, 12.f / 255, 16.f / 255);
+        if (value >= 20) {
+            text_color = value == 30 ? Color(210.f / 255, 200.f / 255, 252.f / 255)
+                : Color(183.f / 255, 247.f / 255, 1.f);
+            outline_color = value == 30 ? Color(62.f / 255, 52.f / 255, 102.f / 255)
+                : Color(14.f / 255, 50.f / 255, 54.f / 255);
+        }
+        level->add_theme_color_override("font_color", text_color);
+        level->add_theme_color_override("font_outline_color", outline_color);
     }
     if (Control *fill = Object::cast_to<Control>(character_dialog->find_child("AsideLevelBarFill", true, false))) {
         const int value = content::level_of(id);
@@ -1491,8 +1733,59 @@ void ClientScreen::apply_partner_aside(int id) {
     }
     if (dialog_portrait && !partner_details_open && !partner_detail_busy && dialog_portrait_seconds >= .45)
         dialog_portrait->set_modulate(Color(1, 1, 1, open ? 1.f : 153.f / 255.f));
+    if (dialog_portrait && !partner_details_open && !partner_detail_busy) {
+        const String portrait_path = "char/1080/" + id_text + (use_u ? "u.png" : ".png");
+        Ref<Texture2D> portrait = content::image(portrait_path);
+        if (!portrait.is_valid() && use_u) portrait = content::image("char/1080/" + id_text + ".png");
+        if (portrait.is_valid()) {
+            if (TextureRect *portrait_node = Object::cast_to<TextureRect>(dialog_portrait)) {
+                const bool changed = portrait_node->get_texture() != portrait;
+                portrait_node->set_texture(portrait);
+                const Vector2 size(portrait->get_width(), portrait->get_height());
+                dialog_portrait->set_size(size);
+                if (changed) {
+                    dialog_portrait->set_position(at(575, -225, size.x, size.y));
+                    dialog_portrait->set_modulate(Color(1, 1, 1, 0));
+                    dialog_portrait_seconds = 0;
+                    dialog_portrait_slide = true;
+                } else {
+                    dialog_portrait->set_position(at(350, -225, size.x, size.y));
+                }
+            }
+        }
+    }
     if (CanvasItem *tag = Object::cast_to<CanvasItem>(character_dialog->find_child("AsideOfflineTag", true, false)))
         tag->set_visible(!open);
+    
+    if (TextureButton *level_tag = Object::cast_to<TextureButton>(character_dialog->find_child("AsideLevelUpTag", true, false))) {
+        const int level = content::level_of(id);
+        const bool online_session = menu_user_logged_in && menu_online_available;
+        const bool awaken = id != 71 && level == 20 && content::uncappable(id) && !content::uncapped(id);
+        const int cap = content::uncapped(id) ? 30 : 20;
+        const int next_exp = level > 0 && level < cap ? content::next_level_exp(level) : -1;
+        const double current_exp = content::exp_into_level(id);
+        const int core_exp = content::core_exp_value();
+        const int exp_needed = next_exp > 0 && current_exp >= 0 ? std::max(0, next_exp - int(current_exp)) : 0;
+        const int cores_needed = core_exp > 0 ? (exp_needed + core_exp - 1) / core_exp : 0;
+        const bool affordable = awaken || (cores_needed > 0 && content::ether_drop_count() >= cores_needed);
+        const bool can_act = level > 0 && (awaken || level < cap) && affordable;
+        const bool active = online_session && can_act;
+        const String normal_asset = active
+            ? (awaken ? String("level-awaken-available.png") : String("level-available.png"))
+            : (awaken ? String("level-awaken.png") : String("level-tag.png"));
+        const String pressed_asset = active
+            ? (awaken ? String("level-awaken-available-pressed.png") : String("level-tag-available-pressed.png"))
+            : (awaken ? String("level-awaken-pressed.png") : String("level-tag-pressed.png"));
+        level_tag->set_texture_normal(content::image(String("characterselect/") + normal_asset));
+        level_tag->set_texture_pressed(content::image(String("characterselect/") + pressed_asset));
+        level_tag->set_texture_disabled(content::image(String("characterselect/") + (awaken
+            ? "level-awaken.png" : "level-tag.png")));
+        level_tag->set_visible(false);
+        level_tag->set_disabled(!active || menu_http_kind != 0 || partner_uncap_toggle_id >= 0);
+        if (Label *caption = Object::cast_to<Label>(level_tag->get_node_or_null("AsideLevelUp")))
+            caption->set_text(awaken ? String(U"觉醒") : String(U"升级"));
+    }
+    
     if (Label *multiplier = Object::cast_to<Label>(character_dialog->find_child("CharacterFragMultiplier", true, false))) {
         const int frag = content::frag_of(id);
         if (frag < 0) {
@@ -1539,7 +1832,10 @@ void ClientScreen::show_partner_preview(int id) {
     glow->set_texture(load(char_type == 1 ? "characterselect/glow-ez.png"
         : char_type == 2 ? "characterselect/glow-hard.png" : "characterselect/glow-normal.png"));
     auto *preview = Object::cast_to<TextureRect>(dialog_portrait);
-    Ref<Texture2D> portrait = content::image(String("char/1080/") + String::num_int64(id) + ".png");
+    const String portrait_base = "char/1080/" + String::num_int64(id);
+    const bool use_u = content::uncapped_override(id);
+    Ref<Texture2D> portrait = use_u ? content::image(portrait_base + String("u.png")) : Ref<Texture2D>();
+    if (!portrait.is_valid()) portrait = content::image(portrait_base + String(".png"));
     if (preview && portrait.is_valid()) {
         preview->set_texture(portrait);
         const Vector2 size(portrait->get_width(), portrait->get_height());
@@ -1563,9 +1859,18 @@ void ClientScreen::show_partner_preview(int id) {
         auto *border = Object::cast_to<TextureRect>(cell->get_node_or_null("Border"));
         if (!border) continue;
         const bool selected = cell_id == id;
-        border->set_texture(load(selected ? "characterselect/partner-border-sel.png" : "characterselect/partner-border.png"));
+        const int cell_level = content::level_of(cell_id);
+        const String border_path = selected ? "characterselect/partner-border-sel.png"
+            : cell_level == 30 ? "characterselect/partner-border-awaken.png"
+            : cell_level >= 20 ? "characterselect/partner-border-max.png"
+            : "characterselect/partner-border.png";
+        border->set_texture(content::image(border_path));
         border->set_material(selected ? selected_material : Ref<ShaderMaterial>());
-        const float width = (selected ? 234.f : 194.f) * .9f * 1.005f;
+        // Different border textures have different sizes:
+        // normal: 194x194, sel: 234x234, max/awaken: 248x246
+        // Use 0.9 scale like original
+        float base_size = selected ? 234.f : (cell_level >= 20 ? 248.f : 194.f);
+        const float width = base_size * .9f * 1.005f;
         border->set_size(Vector2(width, width));
         border->set_position((cell->get_size() - border->get_size()) / 2);
     }
@@ -1760,27 +2065,38 @@ void ClientScreen::apply_hub_partner(int id, bool slide) {
     tween->tween_property(node, "modulate:a", 1.f, .45)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
 }
 
-void ClientScreen::menu_hover(int which, int hovered) {
-    Label *label = Object::cast_to<Label>(stage->find_child(which == 1 ? "SelectSong" : "ViewTimeline", true, false));
-    if (!label) return;
-    label->add_theme_color_override("font_color", hovered
-        ? Color(31.f / 255, 34.f / 255, 48.f / 255)
-        : Color(218.f / 255, 254.f / 255, 254.f / 255));
-}
-
 void ClientScreen::menu_fetch_user() {
     if (!menu_http || menu_http_kind != 0) return;
     const String token = menu_token();
     const String base = menu_base_url();
-    if (token.is_empty() || base.is_empty()) return;
+    menu_user_logged_in = !token.is_empty();
+    if (token.is_empty() || base.is_empty()) {
+        menu_online_available = false;
+        if (character_dialog) apply_partner_aside(dialog_preview_character);
+        return;
+    }
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Accept: application/json");
     menu_http_kind = 1;
     if (menu_http->request(base.trim_suffix("/") + "/user/online", headers) != OK) {
         menu_http_kind = 0;
+        menu_online_available = false;
+        if (character_dialog) apply_partner_aside(dialog_preview_character);
         show_partner_message(U"无法连接至服务器");
+    }
+}
+
+void ClientScreen::menu_fetch_game_info() {
+    if (!menu_http || menu_http_kind != 0) return;
+    const String base = menu_base_url();
+    if (base.is_empty()) return;
+    PackedStringArray headers;
+    headers.push_back("Accept: application/json");
+    menu_http_kind = 7; // game/info request
+    if (menu_http->request(base.trim_suffix("/") + "/game/info", headers) != OK) {
+        menu_http_kind = 0;
     }
 }
 
@@ -1791,12 +2107,12 @@ void ClientScreen::menu_commit_character(int id) {
     if (token.is_empty() || base.is_empty()) return;
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Accept: application/json");
     headers.push_back("Content-Type: application/x-www-form-urlencoded");
     menu_commit_id = id;
     menu_http_kind = 2;
-    const String body = "character=" + String::num_int64(id) + "&skill_sealed=false";
+    const String body = "character=" + String::num_int64(id) + "&skill_sealed=" + (content::skill_sealed() ? "true" : "false");
     if (menu_http->request(base.trim_suffix("/") + "/user/online/character", headers, HTTPClient::METHOD_POST, body) != OK) {
         menu_http_kind = 0;
         show_partner_message(U"无法连接至服务器");
@@ -1809,6 +2125,85 @@ void ClientScreen::menu_http_completed(int result, int response_code, const Pack
     const int kind = menu_http_kind;
     const int commit = menu_commit_id;
     menu_http_kind = 0;
+    if (kind == 1) menu_online_available = false;
+    if (kind == 7) {
+        if (result != HTTPRequest::RESULT_SUCCESS || response_code != 200) return;
+        const String text = String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).strip_edges();
+        const Variant parsed = JSON::parse_string(text);
+        if (parsed.get_type() == Variant::DICTIONARY) {
+            const Dictionary response = parsed;
+            if (response.has("value") && response["value"].get_type() == Variant::DICTIONARY) {
+                const Dictionary game_info = response["value"];
+                content::remember_game_info(game_info);
+        }
+    }
+    if (character_dialog) apply_partner_aside(dialog_preview_character);
+        return;
+    }
+    if (kind == 6) {
+        // Level-up response
+        partner_uncap_toggle_id = -1;
+        if (result != HTTPRequest::RESULT_SUCCESS || response_code != 200) {
+            end_partner_purchase_activity(false);
+            if (character_dialog) show_partner_message(result != HTTPRequest::RESULT_SUCCESS ? String(U"无法连接至服务器") : String(U"发生了未知错误"));
+            return;
+        }
+        const String text = String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).strip_edges();
+        const Variant parsed = JSON::parse_string(text);
+        bool success = response_code >= 200 && response_code < 300;
+        if (parsed.get_type() == Variant::DICTIONARY) {
+            const Dictionary response = parsed;
+            if (response.has("success")) {
+                const Variant flag = response["success"];
+                success = flag == Variant(true) || int(flag) == 1 || String(flag).to_lower() == "true";
+            }
+        }
+        if (!success) {
+            end_partner_purchase_activity(false);
+            if (character_dialog) show_partner_message(U"升级失败");
+            return;
+        }
+        // Refresh user data to get updated character stats
+        partner_uncap_refresh_pending = true;
+        menu_fetch_user();
+        if (menu_http_kind != 1) {
+            partner_uncap_refresh_pending = false;
+            end_partner_purchase_activity(false);
+        }
+        return;
+    }
+    if (kind == 5) {
+        partner_uncap_toggle_id = -1;
+        if (result != HTTPRequest::RESULT_SUCCESS || response_code != 200) {
+            end_partner_purchase_activity(false);
+            if (character_dialog) apply_partner_aside(dialog_preview_character);
+            if (character_dialog) show_partner_message(result != HTTPRequest::RESULT_SUCCESS ? String(U"无法连接至服务器") : String(U"发生了未知错误"));
+            return;
+        }
+        const String text = String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).strip_edges();
+        const Variant parsed = JSON::parse_string(text);
+        bool success = response_code >= 200 && response_code < 300;
+        if (parsed.get_type() == Variant::DICTIONARY) {
+            const Dictionary response = parsed;
+            if (response.has("success")) {
+                const Variant flag = response["success"];
+                success = flag == Variant(true) || int(flag) == 1 || String(flag).to_lower() == "true";
+            }
+        }
+        if (!success) {
+            end_partner_purchase_activity(false);
+            if (character_dialog) apply_partner_aside(dialog_preview_character);
+            if (character_dialog) show_partner_message(U"发生了未知错误");
+            return;
+        }
+        partner_uncap_refresh_pending = true;
+        menu_fetch_user();
+        if (menu_http_kind != 1) {
+            partner_uncap_refresh_pending = false;
+            end_partner_purchase_activity(false);
+        }
+        return;
+    }
     if (kind == 4) {
         if (result != HTTPRequest::RESULT_SUCCESS) fail_partner_purchase_check(U"无法连接至服务器");
         else if (response_code != 200) fail_partner_purchase_check(U"发生了未知错误");
@@ -1817,7 +2212,14 @@ void ClientScreen::menu_http_completed(int result, int response_code, const Pack
     }
     if ((kind == 2 || kind == 3) && partner_purchase_busy && partner_purchase_busy->is_visible())
         end_partner_purchase_activity(false);
+    const bool uncap_refresh = kind == 1 && partner_uncap_refresh_pending;
+    if (uncap_refresh) {
+        partner_uncap_refresh_pending = false;
+        end_partner_purchase_activity(false);
+    }
     if (result != HTTPRequest::RESULT_SUCCESS || response_code != 200) {
+        if (kind == 1 && character_dialog) apply_partner_aside(dialog_preview_character);
+        if (partner_details_open) refresh_partner_details();
         if ((kind == 1 || kind == 2 || kind == 3) && character_dialog)
             show_partner_message(result != HTTPRequest::RESULT_SUCCESS ? String(U"无法连接至服务器") : String(U"发生了未知错误"));
         return;
@@ -1829,6 +2231,7 @@ void ClientScreen::menu_http_completed(int result, int response_code, const Pack
             if (object.has("success")) {
                 const Variant flag = object["success"];
                 if (!(flag == Variant(true) || int(flag) == 1 || String(flag).to_lower() == "true")) {
+                    if (kind == 1 && character_dialog) apply_partner_aside(dialog_preview_character);
                     show_partner_message(U"发生了未知错误");
                     return;
                 }
@@ -1837,10 +2240,30 @@ void ClientScreen::menu_http_completed(int result, int response_code, const Pack
     }
     if (kind == 1) {
         const String text = String::utf8(reinterpret_cast<const char *>(body.ptr()), body.size()).strip_edges();
-        if (!text.begins_with("{") && !text.begins_with("[")) return;
+        if (!text.begins_with("{") && !text.begins_with("[")) {
+            if (character_dialog) apply_partner_aside(dialog_preview_character);
+            if (uncap_refresh) {
+                if (character_dialog) show_partner_message(U"发生了未知错误");
+            }
+            return;
+        }
         int id = -1;
         const Variant parsed = JSON::parse_string(text);
+        if (uncap_refresh && parsed.get_type() != Variant::DICTIONARY && parsed.get_type() != Variant::ARRAY) {
+            apply_partner_aside(dialog_preview_character);
+            if (character_dialog) show_partner_message(U"发生了未知错误");
+            return;
+        }
+        if (parsed.get_type() != Variant::DICTIONARY && parsed.get_type() != Variant::ARRAY) {
+            if (character_dialog) apply_partner_aside(dialog_preview_character);
+            return;
+        }
+        menu_online_available = true;
         content::remember_online(parsed);
+        if (content::level_exp_table().is_empty()) menu_fetch_game_info();
+        find_int(parsed, "character", id);
+        if (uncap_refresh || id == selected_character) apply_hub_partner(selected_character, false);
+        if (partner_details_open) refresh_partner_details();
         for (Control *cell : dialog_cells) {
             if (Control *lock = Object::cast_to<Control>(cell->get_node_or_null("Lock")))
                 lock->set_visible(!content::unlocked(int(cell->get_meta("character_id"))));
@@ -1851,7 +2274,7 @@ void ClientScreen::menu_http_completed(int result, int response_code, const Pack
             if (!content::unlocked(bought)) content::grant_purchased(bought);
         }
         if (character_dialog) apply_partner_aside(dialog_preview_character);
-        if (!find_int(parsed, "character", id) || id < 0 || id == selected_character) return;
+        if (id < 0 || id == selected_character) return;
         apply_hub_partner(id, true);
         return;
     }

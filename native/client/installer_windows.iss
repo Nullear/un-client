@@ -1,5 +1,5 @@
 #define ProductName "Un Client"
-#define ProductVersion "1.0.0"
+#define ProductVersion "1.1"
 #define PublisherName "Un Client"
 #define PackageDir AddBackslash(SourcePath) + "..\..\build\windows-encrypted"
 

@@ -6,8 +6,6 @@
 #import <AVFoundation/AVFoundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
 #import <UIKit/UIKit.h>
-#import <QuartzCore/CAEAGLLayer.h>
-#import <QuartzCore/CAMetalLayer.h>
 #include <cstring>
 #include <netinet/in.h>
 
@@ -24,74 +22,6 @@ extern "C" void unregister_unfalsus_video_types_c();
 + (Class)layerClass { return [AVPlayerLayer class]; }
 @end
 
-@interface UFDebugOverlay : UIView
-@property(nonatomic, strong) NSMutableArray<NSString *> *entries;
-@property(nonatomic, strong) UIButton *toggle;
-@property(nonatomic, strong) UIView *panel;
-@property(nonatomic, strong) UITextView *text;
-- (void)addEntry:(NSString *)entry;
-@end
-
-@implementation UFDebugOverlay
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hit = [super hitTest:point withEvent:event];
-    return hit == self ? nil : hit;
-}
-
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (!self) return nil;
-    self.entries = [NSMutableArray array];
-    self.userInteractionEnabled = YES;
-    self.toggle = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.toggle.frame = CGRectMake(12, 42, 132, 38);
-    self.toggle.backgroundColor = [UIColor colorWithWhite:0 alpha:.88];
-    [self.toggle setTitle:@"iOS Debug" forState:UIControlStateNormal];
-    [self.toggle setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    self.toggle.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    self.toggle.layer.cornerRadius = 7;
-    [self.toggle addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:self.toggle];
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake(12, 88, frame.size.width - 24, frame.size.height - 112)];
-    self.panel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.panel.backgroundColor = [UIColor colorWithWhite:0 alpha:.96];
-    self.panel.layer.cornerRadius = 8;
-    self.panel.hidden = YES;
-    [self addSubview:self.panel];
-    UIButton *copy = [UIButton buttonWithType:UIButtonTypeSystem];
-    copy.frame = CGRectMake(8, 8, 90, 34);
-    [copy setTitle:@"复制全部" forState:UIControlStateNormal];
-    [copy setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    [copy addTarget:self action:@selector(copyLog) forControlEvents:UIControlEventTouchUpInside];
-    [self.panel addSubview:copy];
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(self.panel.bounds.size.width - 82, 8, 74, 34);
-    close.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
-    [close setTitle:@"关闭" forState:UIControlStateNormal];
-    [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    [close addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
-    [self.panel addSubview:close];
-    self.text = [[UITextView alloc] initWithFrame:CGRectMake(8, 50, self.panel.bounds.size.width - 16, self.panel.bounds.size.height - 58)];
-    self.text.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.text.backgroundColor = UIColor.blackColor;
-    self.text.textColor = UIColor.whiteColor;
-    self.text.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
-    self.text.editable = NO;
-    self.text.selectable = YES;
-    [self.panel addSubview:self.text];
-    return self;
-}
-- (void)addEntry:(NSString *)entry {
-    if (!entry) return;
-    [self.entries addObject:entry];
-    while (self.entries.count > 200) [self.entries removeObjectAtIndex:0];
-    self.text.text = [self.entries componentsJoinedByString:@"\n"];
-    [self.text scrollRangeToVisible:NSMakeRange(self.text.text.length, 0)];
-}
-- (void)togglePanel { self.panel.hidden = !self.panel.hidden; }
-- (void)copyLog { [UIPasteboard generalPasteboard].string = self.text.text ?: @""; }
-@end
-
 class UnFalsusVideo : public Object {
     GDCLASS(UnFalsusVideo, Object);
 
@@ -104,38 +34,6 @@ class UnFalsusVideo : public Object {
     int frame_height = 0;
     id end_observer = nil;
     std::atomic_bool finished = false;
-    UIView *render_view = nil;
-    UFDebugOverlay *debug_overlay = nil;
-    BOOL render_was_opaque = YES;
-    BOOL layer_was_opaque = YES;
-    UIColor *render_background = nil;
-    CGColorRef render_layer_background = nil;
-
-    static UIView *find_render_view(UIView *root) {
-        NSString *layer_name = NSStringFromClass(root.layer.class);
-        if ([root.layer isKindOfClass:[CAEAGLLayer class]] ||
-                [root.layer isKindOfClass:[CAMetalLayer class]] ||
-                [layer_name containsString:@"OpenGLLayer"]) return root;
-        for (UIView *child in root.subviews) {
-            UIView *found = find_render_view(child);
-            if (found) return found;
-        }
-        // Godot 4.4 may expose only its wrapper as GodotView. Keep this as a
-        // last resort so a real renderer child always wins when present.
-        if ([NSStringFromClass(root.class) isEqualToString:@"GodotView"]) return root;
-        return nil;
-    }
-
-    static NSString *describe_view_tree(UIView *root, NSUInteger depth) {
-        if (!root || depth > 5) return @"";
-        NSMutableString *result = [NSMutableString stringWithFormat:@"%@%@ layer=%@ frame=%@\n",
-            [@"  " stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0],
-            NSStringFromClass(root.class), NSStringFromClass(root.layer.class), NSStringFromCGRect(root.frame)];
-        for (UIView *child in root.subviews)
-            [result appendString:describe_view_tree(child, depth + 1)];
-        return result;
-    }
-
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("play", "absolute_path", "loop"), &UnFalsusVideo::play);
         ClassDB::bind_method(D_METHOD("stop"), &UnFalsusVideo::stop);
@@ -146,18 +44,6 @@ class UnFalsusVideo : public Object {
         ClassDB::bind_method(D_METHOD("get_frame"), &UnFalsusVideo::get_frame);
         ClassDB::bind_method(D_METHOD("get_frame_width"), &UnFalsusVideo::get_frame_width);
         ClassDB::bind_method(D_METHOD("get_frame_height"), &UnFalsusVideo::get_frame_height);
-    }
-
-    void debug_log(NSString *message) {
-        NSLog(@"[UnFalsusVideo] %@", message);
-        if (debug_overlay) [debug_overlay addEntry:message];
-    }
-
-    void ensure_debug_overlay(UIWindow *window) {
-        if (!window || debug_overlay) return;
-        debug_overlay = [[UFDebugOverlay alloc] initWithFrame:window.bounds];
-        debug_overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [window addSubview:debug_overlay];
     }
 
     void stop_on_main() {
@@ -176,18 +62,6 @@ class UnFalsusVideo : public Object {
         title_view = nil;
         [view removeFromSuperview];
         view = nil;
-        if (render_view) {
-            render_view.opaque = render_was_opaque;
-            render_view.layer.opaque = layer_was_opaque;
-            render_view.backgroundColor = render_background;
-            render_view.layer.backgroundColor = render_layer_background;
-            render_view = nil;
-            render_background = nil;
-            if (render_layer_background) {
-                CGColorRelease(render_layer_background);
-                render_layer_background = nil;
-            }
-        }
     }
 
 public:
@@ -241,16 +115,13 @@ public:
             stop_on_main();
             UIWindow *window = UIApplication.sharedApplication.keyWindow;
             if (!window) window = UIApplication.sharedApplication.windows.firstObject;
-            ensure_debug_overlay(window);
-            debug_log([NSString stringWithFormat:@"play loop=%@ path=%@", loop ? @"YES" : @"NO", path]);
-            if (!window) { debug_log(@"no UIWindow"); finished.store(true); return; }
+            if (!window) { finished.store(true); return; }
 
             AVPlayerItem *item = [AVPlayerItem playerItemWithURL:[NSURL fileURLWithPath:path]];
             NSDictionary *settings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA) };
             output = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:settings];
             [item addOutput:output];
             player = [AVPlayer playerWithPlayerItem:item];
-            debug_log(@"AVPlayer frame output attached; video is rendered by Godot TextureRect");
             if (white_view) [window bringSubviewToFront:white_view];
 
             end_observer = [[NSNotificationCenter defaultCenter]
@@ -262,11 +133,9 @@ public:
                         }];
                     } else {
                         finished.store(true);
-                        debug_log(@"player reached end");
                     }
                 }];
             [player play];
-            debug_log([NSString stringWithFormat:@"AVPlayer started rate=%.2f", player.rate]);
         });
         return true;
     }
@@ -312,7 +181,6 @@ public:
     }
 
     void stop() {
-        if (debug_overlay) debug_log(@"stop requested");
         finished.store(false);
         if ([NSThread isMainThread]) stop_on_main();
         else dispatch_sync(dispatch_get_main_queue(), ^{ stop_on_main(); });

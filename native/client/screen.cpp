@@ -44,7 +44,6 @@
 using namespace godot;
 
 static constexpr float W = 1920, H = 1080;
-static constexpr const char *IMAGE = "res://assets/resources/img/";
 static constexpr const char *AUDIO = "res://assets/resources/audio/";
 
 #if defined(_WIN32)
@@ -109,12 +108,7 @@ static Vector2 canvas_pos(float x, float y, float w, float h, float ax = .5f, fl
 }
 
 static Ref<Texture2D> texture(const String &file) {
-    const String path = IMAGE + file;
-    if (!ResourceLoader::get_singleton()->exists(path)) {
-        UtilityFunctions::push_warning("Missing scene artwork: ", path);
-        return Ref<Texture2D>();
-    }
-    return ResourceLoader::get_singleton()->load(path);
+    return content::image(file);
 }
 
 static TextureRect *image(Control *parent, const char *name, const String &path,
@@ -163,13 +157,10 @@ void ClientScreen::prepare_scene_resources() {
         content::song_title("");
     } else {
         retain_directory(retain_directory, "res://assets/resources/font/mainmenu");
-        retain_directory(retain_directory, "res://assets/resources/img/transition");
         retain_directory(retain_directory, "res://assets/resources/audio/sfx");
     }
-    if (scene_kind == 0) {
-        retain_directory(retain_directory, "res://assets/resources/img/startup");
-    } else if (scene_kind == 2) {
-        retain_directory(retain_directory, "res://assets/resources/img/konzetsu");
+    // Scene artwork is loaded through content::image so user assets can override it.
+    if (scene_kind == 2) {
         retain_directory(retain_directory, "res://assets/resources/audio/konzetsu");
     }
     const char *intro = scene_kind == 0 ? "title_full.ogg" : scene_kind == 1 ? "mainmenu_full.ogg" : "hub_konzetsu.ogg";
@@ -195,7 +186,6 @@ void ClientScreen::_bind_methods() {
     ClassDB::bind_method(D_METHOD("close_character_select"), &ClientScreen::close_character_select);
     ClassDB::bind_method(D_METHOD("menu_http_completed", "result", "response_code", "headers", "body"), &ClientScreen::menu_http_completed);
     ClassDB::bind_method(D_METHOD("konzetsu_tasks_completed", "result", "response_code", "headers", "body"), &ClientScreen::konzetsu_tasks_completed);
-    ClassDB::bind_method(D_METHOD("menu_hover", "which", "hovered"), &ClientScreen::menu_hover);
     ClassDB::bind_method(D_METHOD("select_character", "id"), &ClientScreen::select_character);
     ClassDB::bind_method(D_METHOD("open_partner_details"), &ClientScreen::open_partner_details);
     ClassDB::bind_method(D_METHOD("close_partner_details"), &ClientScreen::close_partner_details);
@@ -205,6 +195,8 @@ void ClientScreen::_bind_methods() {
     ClassDB::bind_method(D_METHOD("finish_partner_detail_transition", "open"), &ClientScreen::finish_partner_detail_transition);
     ClassDB::bind_method(D_METHOD("preview_partner_level", "level"), &ClientScreen::preview_partner_level);
     ClassDB::bind_method(D_METHOD("cycle_partner_preview"), &ClientScreen::cycle_partner_preview);
+    ClassDB::bind_method(D_METHOD("toggle_partner_uncap"), &ClientScreen::toggle_partner_uncap);
+    ClassDB::bind_method(D_METHOD("toggle_partner_skill_seal"), &ClientScreen::toggle_partner_skill_seal);
     ClassDB::bind_method(D_METHOD("open_partner_purchase"), &ClientScreen::open_partner_purchase);
     ClassDB::bind_method(D_METHOD("close_partner_modal"), &ClientScreen::close_partner_modal);
     ClassDB::bind_method(D_METHOD("confirm_partner_purchase"), &ClientScreen::confirm_partner_purchase);
@@ -357,7 +349,8 @@ static int aside_pin(const String &name) {
     if (name == "PartnerGlow" || name == "SkillContainer" || name == "SkillContainerStats"
             || name == "SkillNameStats" || name == "AsideLv" || name == "AsideLevel"
             || name == "AsideLevelBar" || name == "AsideLevelBarFill" || name == "CharacterFragMultiplier"
-            || name == "AsideOfflineTag")
+            || name == "AsideOfflineTag" || name == "AsideLevelUpTag" || name == "AsideUncapToggle" || name == "AsideSkillToggle"
+            || name == "SkillActiveIcon" || name == "SkillActiveText")
         return 1;
     if (name == "NameBacking" || name == "PartnerName" || name == "PartnerShape"
             || name == "PartnerIllustrator" || name == "DetailsButton")
@@ -405,8 +398,10 @@ static void adapt_partner_select(Node *node, float extra, float extra_y) {
                 else if (name == "LeftShadow" || name == "ViewAllButton" || name == "ViewAllCaption" || name == "PartnerGlow"
                         || name == "SkillContainer" || name == "SkillContainerStats" || name == "SkillNameStats"
                         || name == "AsideLv" || name == "AsideLevel" || name == "AsideLevelBar"
-                        || name == "AsideLevelBarFill" || name == "AsideOfflineTag"
-                        || name == "CharacterFragMultiplier" || name == "DetailsButton")
+                        || name == "AsideLevelBarFill" || name == "AsideOfflineTag" || name == "AsideLevelUpTag"
+                        || name == "CharacterFragMultiplier" || name == "DetailsButton"
+                        || name == "AsideUncapToggle" || name == "AsideSkillToggle"
+                        || name == "SkillActiveIcon" || name == "SkillActiveText")
                     place_vertical(control, inset);
                 else if (name == "PartnerIllustration")
                     place_vertical(control, -inset * .5f);
@@ -491,6 +486,14 @@ void ClientScreen::layout() {
     }
     if (character_dialog) {
         adapt_partner_select(character_dialog, extra_x, extra_y);
+        if (partner_details && partner_details_content) {
+            partner_details_content->set_position(Vector2(extra_x * .5f, extra_y * .5f));
+            partner_details_content->set_size(Vector2(W, H));
+            if (Control *back = Object::cast_to<Control>(partner_details->get_node_or_null(NodePath("DetailsBackButton")))) {
+                if (!back->has_meta("home_pos")) back->set_meta("home_pos", back->get_position());
+                back->set_position(Vector2(back->get_meta("home_pos")) + Vector2(extra_x * .5f, extra_y * .5f));
+            }
+        }
         if (dialog_all) {
             place_adaptive(dialog_all, -shift, -extra_y * .5f, extra_x, extra_y);
             if (dialog_all_list) place_adaptive(dialog_all_list, 0, 0, extra_x, extra_y);
@@ -888,8 +891,20 @@ void ClientScreen::return_to_menu() {
 void ClientScreen::begin_konzetsu_tasks_request() {
     if (switching || konzetsu_task_request_pending || !konzetsu_http || !konzetsu_task_busy) return;
     konzetsu_previous_tasks.clear();
+    const String today = Time::get_singleton()->get_date_string_from_system(true);
     const Variant previous = get_tree()->get_meta("konzetsu_daily_tasks", Variant());
-    if (previous.get_type() == Variant::ARRAY) konzetsu_previous_tasks = Array(previous).duplicate(true);
+    const String previous_date = get_tree()->get_meta("konzetsu_daily_tasks_date", today);
+    if (previous.get_type() == Variant::ARRAY && previous_date == today) {
+        konzetsu_previous_tasks = Array(previous).duplicate(true);
+    } else {
+        Ref<ConfigFile> snapshot;
+        snapshot.instantiate();
+        if (snapshot->load("user://konzetsu_tasks.cfg") == OK
+                && String(snapshot->get_value("tasks", "date", "")) == today) {
+            const Variant saved = snapshot->get_value("tasks", "snapshot", Variant());
+            if (saved.get_type() == Variant::ARRAY) konzetsu_previous_tasks = Array(saved).duplicate(true);
+        }
+    }
     konzetsu_task_error = "";
     konzetsu_task_busy->show();
     stage->move_child(konzetsu_task_busy, stage->get_child_count() - 1);
@@ -918,7 +933,7 @@ void ClientScreen::begin_konzetsu_tasks_request() {
     }
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token);
-    headers.push_back("AppVersion: " + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.0.0")));
+    headers.push_back("AppVersion: " + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.1")));
     headers.push_back("Accept: application/json");
     konzetsu_task_request_pending = true;
     const Error err = konzetsu_http->request(request_base.trim_suffix("/") + "/user/task", headers);
@@ -931,7 +946,8 @@ void ClientScreen::begin_konzetsu_tasks_request() {
 }
 
 void ClientScreen::set_konzetsu_tasks(const Array &tasks) {
-    if (tasks.size() != 5) return;
+    if (tasks.size() != 6 || tasks[5].get_type() != Variant::DICTIONARY
+            || String(Dictionary(tasks[5]).get("id", "")) != "challenge_16_clear") return;
     konzetsu_tasks = tasks;
     konzetsu_tasks_loaded = true;
     refresh_konzetsu_hub_visuals();
@@ -978,7 +994,7 @@ void ClientScreen::konzetsu_tasks_completed(int result, int response_code, const
             const Dictionary response = parsed;
             if (response.has("error_code")) message += String(U"\n服务端 error_code：") + String(response["error_code"]);
         }
-        message += String(U"\n请求版本：") + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.0.0"));
+        message += String(U"\n请求版本：") + String(ProjectSettings::get_singleton()->get_setting("application/config/version", "1.1"));
         fail(message);
         return;
     }
@@ -1006,20 +1022,37 @@ void ClientScreen::konzetsu_tasks_completed(int result, int response_code, const
         fail(U"任务响应格式错误：缺少 value.tasks 数组");
         return;
     }
-    if (Array(tasks).size() != 5) {
-        fail(String(U"任务响应数量错误：预期 5 项，实际 ") + String::num_int64(Array(tasks).size()) + U" 项");
+    if (Array(tasks).size() != 6) {
+        fail(String(U"任务响应数量错误：预期 6 项，实际 ") + String::num_int64(Array(tasks).size()) + U" 项");
         return;
     }
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         if (Array(tasks)[i].get_type() != Variant::DICTIONARY) {
             fail(String(U"任务响应格式错误：第 ") + String::num_int64(i + 1) + U" 项应为对象");
             return;
         }
     }
-    get_tree()->set_meta("konzetsu_pending_clear_mask", konzetsu_new_clear_mask(konzetsu_previous_tasks, Array(tasks)));
+    if (String(Dictionary(Array(tasks)[5]).get("id", "")) != "challenge_16_clear") {
+        fail(U"任务响应格式错误：第六项不是 challenge_16_clear");
+        return;
+    }
+    const int clear_mask = konzetsu_new_clear_mask(konzetsu_previous_tasks, Array(tasks));
+    konzetsu_tasks = Array(tasks).duplicate(true);
+    get_tree()->set_meta("konzetsu_pending_clear_mask", clear_mask);
     get_tree()->set_meta("konzetsu_daily_tasks", Array(tasks).duplicate(true));
+    get_tree()->set_meta("konzetsu_daily_tasks_date", Time::get_singleton()->get_date_string_from_system(true));
+    if (!clear_mask) save_konzetsu_task_snapshot();
     switching = true;
     ClientTransition::get_or_create(get_tree())->switch_to("res://Godot/Scenes/Konzetsu.tscn");
+}
+
+void ClientScreen::save_konzetsu_task_snapshot() {
+    if (konzetsu_tasks.size() != 6) return;
+    Ref<ConfigFile> snapshot;
+    snapshot.instantiate();
+    snapshot->set_value("tasks", "date", Time::get_singleton()->get_date_string_from_system(true));
+    snapshot->set_value("tasks", "snapshot", konzetsu_tasks.duplicate(true));
+    snapshot->save("user://konzetsu_tasks.cfg");
 }
 
 void ClientScreen::animate_character_select(double delta) {

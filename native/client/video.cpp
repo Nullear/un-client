@@ -1,4 +1,5 @@
 #include "client.hpp"
+#include "content.hpp"
 
 #include <godot_cpp/classes/class_db_singleton.hpp>
 #include <godot_cpp/classes/engine.hpp>
@@ -949,7 +950,12 @@ void ClientVideo::set_native_white(float alpha) {
 
 void ClientVideo::set_native_title(const String &resource) {
     if (!ios) return;
-    Ref<Texture2D> texture = ResourceLoader::get_singleton()->load(resource);
+    Ref<Texture2D> texture;
+    const String image_prefix = "res://assets/resources/img/";
+    if (resource.begins_with(image_prefix))
+        texture = content::image(resource.trim_prefix(image_prefix));
+    else
+        texture = ResourceLoader::get_singleton()->load(resource);
     if (!texture.is_valid()) return;
     const String path = ProjectSettings::get_singleton()->globalize_path("user://startup_title.png");
     if (texture->get_image()->save_png(path) == OK) ios->call("set_title", path);

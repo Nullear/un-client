@@ -42,7 +42,7 @@ static Vector2 csb_at(float x, float y, float w, float h, float ax = .5f, float 
 }
 
 static Ref<Texture2D> load_tex(const String &path) {
-    return ResourceLoader::get_singleton()->load(String("res://assets/resources/img/") + path);
+    return content::image(path);
 }
 
 static Ref<Font> font_file(const char *file) {
@@ -204,6 +204,23 @@ void ClientScreen::build_partner_chrome() {
     Label *buy = inked(tag, "AsideOffline", U"购买", 24, regular, Color(1, 1, 1), INK, 0);
     unfalsus_ui::place_ccc(buy, Vector2(tag_w * .5f, tag_h - 18.f), .5f, .5f, tag_w, 24, 0);
     tag->connect("pressed", Callable(this, "open_partner_purchase"));
+    
+    // Level-up button for A-side
+    auto *level_tag = memnew(TextureButton);
+    level_tag->set_name("AsideLevelUpTag");
+    dialog_chrome->add_child(level_tag);
+    level_tag->set_texture_normal(load_tex("characterselect/level-tag.png"));
+    level_tag->set_texture_pressed(load_tex("characterselect/level-tag-pressed.png"));
+    level_tag->set_ignore_texture_size(true);
+    level_tag->set_stretch_mode(TextureButton::STRETCH_SCALE);
+    level_tag->set_focus_mode(Control::FOCUS_NONE);
+    level_tag->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
+    level_tag->set_size(Vector2(tag_w, tag_h));
+    level_tag->set_position(csb_at(963.333f, 149.333f, tag_w, tag_h, .5f, 0));
+    level_tag->set_visible(false);
+    Label *level_up = inked(level_tag, "AsideLevelUp", U"升级", 21, regular, Color(1, 1, 1), Color(79.f / 255, 61.f / 255, 85.f / 255), 1);
+    unfalsus_ui::place_ccc(level_up, Vector2(tag_w * .5f, tag_h - 18.f), .5f, .5f, tag_w, 24, 0);
+    level_tag->connect("pressed", Callable(this, "level_up_partner"));
 
     TextureButton *details = corner_button(dialog_chrome, "DetailsButton",
         "story/actselect/corner-btn-right.png", "story/actselect/corner-btn-right-pressed.png",
@@ -223,6 +240,11 @@ void ClientScreen::build_partner_chrome() {
     partner_details->set_mouse_filter(Control::MOUSE_FILTER_STOP);
     partner_details->set_visible(false);
     partner_details->set_modulate(Color(1, 1, 1, 0));
+    partner_details_content = memnew(Control);
+    partner_details_content->set_name("DetailsContent");
+    partner_details->add_child(partner_details_content);
+    partner_details_content->set_size(Vector2(W, H));
+    partner_details_content->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
     if (Node *close = character_dialog->get_node_or_null("OverlayClose"))
         character_dialog->move_child(close, character_dialog->get_child_count() - 1);
 
@@ -234,25 +256,25 @@ void ClientScreen::build_partner_chrome() {
     back->connect("pressed", Callable(this, "partner_details_back"));
 
     const float panel_w = 652.f * .67f * 1.5f, panel_h = 269.f * .67f * 1.5f;
-    if (TextureRect *panel = sprite(partner_details, "DetailsStatsPanel", "characterselect/stats-backing.png",
+    if (TextureRect *panel = sprite(partner_details_content, "DetailsStatsPanel", "characterselect/stats-backing.png",
             csb_at(0, 583, 0, 0), Vector2(panel_w, panel_h)))
         panel->set_scale(Vector2(1, 1.f / 3.f));
     const Vector2 backing(388.f * .67f * 1.5f, 56.f * .67f * 1.5f);
-    auto *frag_backing = sprite(partner_details, "DetailsFragBarBacking", "characterselect/stats-bar-backing.png",
+    auto *frag_backing = sprite(partner_details_content, "DetailsFragBarBacking", "characterselect/stats-bar-backing.png",
         csb_at(150, 553, backing.x, backing.y, 0, .5f), backing);
     const Vector2 icon(75.f * .8f * 1.5f, 52.f * .8f * 1.5f);
-    sprite(partner_details, "DetailsFragIcon", "characterselect/frag-icon-text.png",
+    sprite(partner_details_content, "DetailsFragIcon", "characterselect/frag-icon-text.png",
         csb_at(95, 550, icon.x, icon.y, 0, .5f), icon);
 
     const float line_h = 2.f * .754f * 1.5f;
-    auto *line = sprite(partner_details, "DetailsFragLine", "characterselect/stats-bar-frag-line.png",
+    auto *line = sprite(partner_details_content, "DetailsFragLine", "characterselect/stats-bar-frag-line.png",
         csb_at(164.07f, 553, 348, line_h, 0, .5f), Vector2(348, line_h));
     if (line) line->set_stretch_mode(TextureRect::STRETCH_SCALE);
 
     const Vector2 bar_size(367.f * .67f * 1.5f, 39.f * .67f * 1.5f);
     auto *bar_clip = memnew(Control);
     bar_clip->set_name("DetailsFragBarClip");
-    partner_details->add_child(bar_clip);
+    partner_details_content->add_child(bar_clip);
     bar_clip->set_clip_contents(true);
     bar_clip->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
     bar_clip->set_size(bar_size);
@@ -272,39 +294,39 @@ void ClientScreen::build_partner_chrome() {
 
     const Vector2 dia_max(21.f * .67f * 1.5f, 20.f * .67f * 1.5f);
     const Vector2 dia_awaken(20.f * .67f * 1.5f, 20.f * .67f * 1.5f);
-    auto *dia_max_node = sprite(partner_details, "DetailsFragDiaMax", "characterselect/frag-dia-max.png", Vector2(0, 0), dia_max);
-    auto *dia_awaken_node = sprite(partner_details, "DetailsFragDiaAwaken", "characterselect/frag-dia-awaken.png", Vector2(0, 0), dia_awaken);
+    auto *dia_max_node = sprite(partner_details_content, "DetailsFragDiaMax", "characterselect/frag-dia-max.png", Vector2(0, 0), dia_max);
+    auto *dia_awaken_node = sprite(partner_details_content, "DetailsFragDiaAwaken", "characterselect/frag-dia-awaken.png", Vector2(0, 0), dia_awaken);
     if (line && bar_clip && dia_max_node && dia_awaken_node) {
-        partner_details->move_child(bar_clip, line->get_index() + 1);
-        partner_details->move_child(dia_max_node, bar_clip->get_index() + 1);
-        partner_details->move_child(dia_awaken_node, dia_max_node->get_index() + 1);
+        partner_details_content->move_child(bar_clip, line->get_index() + 1);
+        partner_details_content->move_child(dia_max_node, bar_clip->get_index() + 1);
+        partner_details_content->move_child(dia_awaken_node, dia_max_node->get_index() + 1);
     }
-    Label *frag_value = inked(partner_details, "DetailsFragValue", "", 27, jamjuree, Color(1, 1, 1),
+    Label *frag_value = inked(partner_details_content, "DetailsFragValue", "", 27, jamjuree, Color(1, 1, 1),
         Color(0x1f / 255.f, 0x77 / 255.f, 0x7e / 255.f), 3);
     frag_value->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
     frag_value->set_size(Vector2(120, 32));
 
     const Vector2 level_bar(496.f * .57f * 1.5f, 11.f * .57f * 1.5f);
-    auto *level_backing = sprite(partner_details, "DetailsLevelBar", "characterselect/lvl-bar.png",
+    auto *level_backing = sprite(partner_details_content, "DetailsLevelBar", "characterselect/lvl-bar.png",
         csb_at(90, 623, level_bar.x, level_bar.y, 0, 0), level_bar);
     const float full = 464.f * .57f * 1.5f, fill_h = 9.f * .57f * 1.5f;
     auto *fill = memnew(Control);
     fill->set_name("DetailsLevelBarFill");
-    partner_details->add_child(fill);
+    partner_details_content->add_child(fill);
     fill->set_clip_contents(true);
     fill->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
     fill->set_meta("full_width", full);
     fill->set_size(Vector2(full, fill_h));
     fill->set_position(csb_at(99, 623.5f, full, fill_h, 0, 0));
     sprite(fill, "Fill", "characterselect/lvl-bar-fill.png", Vector2(0, 0), Vector2(full, fill_h));
-    Label *lv = inked(partner_details, "DetailsLv", "lv.", 24, jamjuree, Color(1, 1, 1), INK, 3);
+    Label *lv = inked(partner_details_content, "DetailsLv", "lv.", 24, jamjuree, Color(1, 1, 1), INK, 3);
     unfalsus_ui::place_ccc(lv, csb_at(95, 628, 0, 0), 0.f, 0.f, 120, 24, 3);
     const float prefix = jamjuree.is_valid() ? jamjuree->get_string_size("lv.", HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x : 36.f;
-    Label *level = inked(partner_details, "DetailsLevel", "", 45, jamjuree, Color(1, 1, 1), INK, 3);
+    Label *level = inked(partner_details_content, "DetailsLevel", "", 45, jamjuree, Color(1, 1, 1), INK, 3);
     unfalsus_ui::place_ccc(level, csb_at(95.f + prefix / 1.5f + 4.f, 624.666f, 0, 0), 0.f, 0.f, 160, 45, 3);
-    Label *exp = inked(partner_details, "DetailsLevelExp", "", 27, jamjuree, Color(0xa8 / 255.f, 0xa8 / 255.f, 0xa8 / 255.f), INK, 2);
+    Label *exp = inked(partner_details_content, "DetailsLevelExp", "", 27, jamjuree, Color(0xa8 / 255.f, 0xa8 / 255.f, 0xa8 / 255.f), INK, 2);
     unfalsus_ui::place_ccc(exp, csb_at(369, 628, 0, 0), 1.f, 0.f, 220, 27, 2);
-    Label *preview_tag = inked(partner_details, "DetailsPreviewTag", U"预览", 21, jamjuree, Color(1, 1, 1), INK, 3);
+    Label *preview_tag = inked(partner_details_content, "DetailsPreviewTag", U"预览", 21, jamjuree, Color(1, 1, 1), INK, 3);
     unfalsus_ui::place_ccc(preview_tag, csb_at(231.333f, 628, 0, 0), .5f, 0.f, 90, 21, 3);
     preview_tag->set_visible(false);
 
@@ -314,7 +336,7 @@ void ClientScreen::build_partner_chrome() {
         const float sw = spec.sw * .67f * 1.5f, sh = spec.sh * .67f * 1.5f;
         auto *button = memnew(TextureButton);
         button->set_name(spec.name);
-        partner_details->add_child(button);
+        partner_details_content->add_child(button);
         button->set_texture_normal(load_tex(String("characterselect/") + spec.asset + ".png"));
         button->set_ignore_texture_size(true);
         button->set_stretch_mode(TextureButton::STRETCH_SCALE);
@@ -340,7 +362,7 @@ void ClientScreen::build_partner_chrome() {
         if (!backing) return;
         auto *button = memnew(Button);
         button->set_name(name);
-        partner_details->add_child(button);
+        partner_details_content->add_child(button);
         button->set_flat(true);
         button->set_focus_mode(Control::FOCUS_NONE);
         button->set_default_cursor_shape(Control::CURSOR_POINTING_HAND);
@@ -361,9 +383,12 @@ void ClientScreen::open_partner_details() {
         search->set_text("");
         search->release_focus();
     }
+    TextureButton *overlay_close = Object::cast_to<TextureButton>(character_dialog->get_node_or_null("OverlayClose"));
     Ref<Tween> tween = character_dialog->create_tween();
     tween->set_parallel(true);
     tween->tween_property(dialog_layout, "modulate:a", 0.f, .22)->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_IN);
+    if (overlay_close) tween->tween_property(overlay_close, "modulate:a", 0.f, .22)
+        ->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_IN);
     if (dialog_portrait) {
         const Vector2 size = dialog_portrait->get_size();
         tween->tween_property(dialog_portrait, "position", at(350.f - 225.f, -225.f, size.x, size.y), .22)
@@ -384,7 +409,7 @@ void ClientScreen::close_partner_details() {
     Ref<Tween> tween = partner_details->create_tween();
     tween->set_parallel(true);
     tween->tween_property(partner_details, "modulate:a", 0.f, .22)->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_IN);
-    if (dialog_portrait && dialog_portrait->get_parent() == partner_details) {
+    if (dialog_portrait && dialog_portrait->get_parent() == partner_details_content) {
         const Vector2 size = dialog_portrait->get_size();
         tween->tween_property(dialog_portrait, "position", at(-225, -225, size.x, size.y), .22)
             ->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_IN);
@@ -399,15 +424,20 @@ void ClientScreen::present_partner_details() {
         return;
     }
     dialog_layout->set_visible(false);
+    if (TextureButton *overlay_close = Object::cast_to<TextureButton>(character_dialog->get_node_or_null("OverlayClose"))) {
+        overlay_close->hide();
+        overlay_close->set_disabled(true);
+    }
     partner_details->set_visible(true);
     partner_details->set_modulate(Color(1, 1, 1, 0));
     partner_preview_level = content::unlocked(dialog_preview_character) ? -1 : 1;
     refresh_partner_details();
     const float alpha = content::unlocked(dialog_preview_character) ? 1.f : 153.f / 255.f;
     if (dialog_portrait) {
-        if (dialog_portrait->get_parent() != partner_details) dialog_portrait->reparent(partner_details, false);
-        partner_details->move_child(dialog_portrait, 0);
+        if (dialog_portrait->get_parent() != partner_details_content) dialog_portrait->reparent(partner_details_content, false);
+        partner_details_content->move_child(dialog_portrait, 0);
         const Vector2 size = dialog_portrait->get_size();
+        // Use same y formula as A-side: at(x, -225, size.x, size.y)
         dialog_portrait->set_position(at(225, -225, size.x, size.y));
         dialog_portrait->set_modulate(Color(1, 1, 1, 0));
         Ref<Tween> tween = partner_details->create_tween();
@@ -448,6 +478,13 @@ void ClientScreen::restore_partner_aside() {
     dialog_layout->set_visible(true);
     dialog_layout->set_modulate(Color(1, 1, 1, 0));
     Ref<Tween> tween = dialog_layout->create_tween();
+    if (TextureButton *overlay_close = Object::cast_to<TextureButton>(character_dialog->get_node_or_null("OverlayClose"))) {
+        overlay_close->show();
+        overlay_close->set_disabled(false);
+        overlay_close->set_modulate(Color(1, 1, 1, 0));
+        tween->parallel()->tween_property(overlay_close, "modulate:a", 1.f, .22)
+            ->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_OUT);
+    }
     tween->tween_property(dialog_layout, "modulate:a", 1.f, .22)->set_trans(Tween::TRANS_SINE)->set_ease(Tween::EASE_OUT);
     tween->tween_callback(Callable(this, "finish_partner_detail_transition").bind(false));
 }
@@ -458,6 +495,7 @@ void ClientScreen::finish_partner_detail_transition(bool open) {
 }
 
 void ClientScreen::refresh_partner_details() {
+    if (!partner_details_content) return;
     if (!partner_details) return;
     const int id = dialog_preview_character;
     const bool uncap = content::uncappable(id);
@@ -519,16 +557,16 @@ void ClientScreen::refresh_partner_details() {
             ->set_trans(Tween::TRANS_SINE)->set_ease(show ? Tween::EASE_OUT : Tween::EASE_IN);
         if (!show) tween->tween_callback(Callable(node, "hide"));
     };
-    if (Label *label = Object::cast_to<Label>(partner_details->get_node_or_null("DetailsLevelExp"))) {
+    if (Label *label = Object::cast_to<Label>(partner_details_content->get_node_or_null("DetailsLevelExp"))) {
         label->set_text(exp_text);
         fade_caption(label, !exp_text.is_empty() && partner_preview_level < 0);
     }
-    fade_caption(Object::cast_to<CanvasItem>(partner_details->get_node_or_null("DetailsPreviewTag")), partner_preview_level >= 0);
-    if (TextureRect *line = Object::cast_to<TextureRect>(partner_details->get_node_or_null("DetailsFragLine"))) {
+    fade_caption(Object::cast_to<CanvasItem>(partner_details_content->get_node_or_null("DetailsPreviewTag")), partner_preview_level >= 0);
+    if (TextureRect *line = Object::cast_to<TextureRect>(partner_details_content->get_node_or_null("DetailsFragLine"))) {
         const float width = frag_line_w(float(std::max(0, content::max_frag(id))), uncap);
         line->set_size(Vector2(width, line->get_size().y));
         auto place_dia = [&](const char *name, float mark, bool visible) {
-            if (TextureRect *dia = Object::cast_to<TextureRect>(partner_details->get_node_or_null(name))) {
+            if (TextureRect *dia = Object::cast_to<TextureRect>(partner_details_content->get_node_or_null(name))) {
                 dia->set_visible(visible);
                 dia->set_position(Vector2(line->get_position().x + mark - dia->get_size().x,
                     line->get_position().y + (line->get_size().y - dia->get_size().y) * .5f));
@@ -541,12 +579,62 @@ void ClientScreen::refresh_partner_details() {
     }
     tick_partner_stats(0);
     for (const PreviewSpec &spec : PREVIEWS) {
-        if (Control *button = Object::cast_to<Control>(partner_details->get_node_or_null(spec.name))) {
+        if (Control *button = Object::cast_to<Control>(partner_details_content->get_node_or_null(spec.name))) {
             const bool visible = spec.uncap == uncap;
             button->set_visible(visible);
             if (CanvasItem *selected = Object::cast_to<CanvasItem>(button->get_node_or_null("Selected")))
                 selected->set_visible(visible && spec.level == partner_preview_level);
         }
+    }
+    
+}
+
+void ClientScreen::toggle_partner_uncap() {
+    const int id = dialog_preview_character;
+    if (!dialog_active || dialog_closing || dialog_view_all || partner_detail_busy || !content::unlocked(id)
+            || !content::uncappable(id) || menu_http_kind != 0 || partner_uncap_toggle_id >= 0) return;
+    if (!menu_http) {
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
+    const String token = menu_token();
+    const String base = menu_base_url();
+    if (token.is_empty() || base.is_empty()) {
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
+    play_sfx("sfx/08_TimelineNodeClick.ogg");
+    PackedStringArray headers;
+    headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
+    headers.push_back("AppVersion: 1.1");
+    headers.push_back("Accept: application/json");
+    partner_uncap_toggle_id = id;
+    menu_http_kind = 5;
+    begin_center_activity();
+    if (menu_http->request(base.trim_suffix("/") + "/user/online/character/" + String::num_int64(id) + "/toggle_uncap",
+            headers, HTTPClient::METHOD_POST) != OK) {
+        partner_uncap_toggle_id = -1;
+        menu_http_kind = 0;
+        end_partner_purchase_activity(false);
+        apply_partner_aside(id);
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
+}
+
+void ClientScreen::toggle_partner_skill_seal() {
+    if (!dialog_active || dialog_closing || dialog_view_all || partner_detail_busy
+            || !content::unlocked(dialog_preview_character) || menu_http_kind != 0
+            || partner_uncap_toggle_id >= 0) return;
+    play_sfx("sfx/08_TimelineNodeClick.ogg");
+    content::set_skill_sealed(!content::skill_sealed());
+    apply_partner_aside(dialog_preview_character);
+    if (dialog_portrait && !partner_details_open && !partner_detail_busy) {
+        const Vector2 size = dialog_portrait->get_size();
+        dialog_portrait->set_position(at(575, -225, size.x, size.y));
+        dialog_portrait->set_modulate(Color(1, 1, 1, 0));
+        dialog_portrait_seconds = 0;
+        dialog_portrait_slide = true;
     }
 }
 
@@ -558,21 +646,21 @@ void ClientScreen::tick_partner_stats(double delta) {
     partner_frag_shown = partner_frag_from + (partner_frag_to - partner_frag_from) * eased;
     partner_level_shown = partner_level_from + (partner_level_to - partner_level_from) * eased;
     partner_fill_shown = partner_fill_from + (partner_fill_to - partner_fill_from) * eased;
-    if (Label *label = Object::cast_to<Label>(partner_details->get_node_or_null("DetailsLevel"))) {
+    if (Label *label = Object::cast_to<Label>(partner_details_content->get_node_or_null("DetailsLevel"))) {
         const bool blank = partner_preview_level < 0 && partner_level_to <= 0 && t >= 1.f;
         label->set_text(blank ? String() : String::num_int64(int(std::lround(partner_level_shown))));
     }
-    if (Control *fill = Object::cast_to<Control>(partner_details->get_node_or_null("DetailsLevelBarFill"))) {
+    if (Control *fill = Object::cast_to<Control>(partner_details_content->get_node_or_null("DetailsLevelBarFill"))) {
         const float full = float(fill->get_meta("full_width", fill->get_size().x));
         fill->set_size(Vector2(full * std::clamp(partner_fill_shown, 0.f, 1.f), fill->get_size().y));
     }
-    if (Control *clip = Object::cast_to<Control>(partner_details->get_node_or_null("DetailsFragBarClip"))) {
+    if (Control *clip = Object::cast_to<Control>(partner_details_content->get_node_or_null("DetailsFragBarClip"))) {
         if (Control *bar = Object::cast_to<Control>(clip->get_node_or_null("DetailsFragBar"))) {
             const float offset = frag_bar_x(partner_frag_shown);
             bar->set_position(Vector2(offset, 0));
             Ref<ShaderMaterial> mask = bar->get_material();
             if (mask.is_valid()) mask->set_shader_parameter("scroll_offset", offset);
-            if (Label *value = Object::cast_to<Label>(partner_details->get_node_or_null("DetailsFragValue"))) {
+            if (Label *value = Object::cast_to<Label>(partner_details_content->get_node_or_null("DetailsFragValue"))) {
                 value->set_text(String::num_int64(int(std::lround(partner_frag_shown))));
                 const float right = clip->get_position().x + bar->get_position().x + bar->get_size().x;
                 unfalsus_ui::place_ccc(value, Vector2(right - 32.f, at(0, 289.5f, 0, 0).y), 1.f, .5f, 160, 27, 3);
@@ -599,6 +687,71 @@ void ClientScreen::cycle_partner_preview() {
     else if (partner_preview_level == 20 && content::uncappable(id)) partner_preview_level = 30;
     else partner_preview_level = content::unlocked(id) ? -1 : 1;
     refresh_partner_details();
+}
+
+void ClientScreen::level_up_partner() {
+    const int id = dialog_preview_character;
+    if (!dialog_active || dialog_closing || dialog_view_all || partner_detail_busy || !content::unlocked(id)
+            || menu_http_kind != 0 || partner_uncap_toggle_id >= 0) return;
+
+    const int live_level = content::level_of(id);
+    const int cap = content::uncapped(id) ? 30 : 20;
+    if (live_level == 20 && cap == 20 && content::uncappable(id)) {
+        toggle_partner_uncap();
+        return;
+    }
+    if (live_level <= 0 || live_level >= cap) return;
+
+    const int next_level_exp_needed = content::next_level_exp(live_level);
+    const double current_exp = content::exp_into_level(id);
+    const int core_exp = content::core_exp_value();
+
+    if (next_level_exp_needed <= 0 || current_exp < 0 || core_exp <= 0) {
+        show_partner_message(U"无法获取升级信息");
+        return;
+    }
+
+    const int exp_needed = std::max(0, next_level_exp_needed - int(current_exp));
+    const int ether_drops_needed = (exp_needed + core_exp - 1) / core_exp;
+    const int ether_drops_owned = content::ether_drop_count();
+
+    if (exp_needed <= 0 || ether_drops_needed <= 0 || ether_drops_owned < ether_drops_needed) {
+        show_partner_message(U"Ether Drop 不足");
+        return;
+    }
+
+    if (!menu_http) {
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
+
+    const String token = menu_token();
+    const String base = menu_base_url();
+    if (token.is_empty() || base.is_empty()) {
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
+    
+    play_sfx("sfx/08_TimelineNodeClick.ogg");
+    PackedStringArray headers;
+    headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
+    headers.push_back("AppVersion: 1.1");
+    headers.push_back("Content-Type: application/x-www-form-urlencoded");
+    headers.push_back("Accept: application/json");
+    
+    const String body = "amount=" + String::num_int64(ether_drops_needed);
+    partner_uncap_toggle_id = id;
+    menu_http_kind = 6;
+    begin_center_activity();
+    
+    if (menu_http->request(base.trim_suffix("/") + "/user/online/character/" + String::num_int64(id) + "/exp",
+            headers, HTTPClient::METHOD_POST, body) != OK) {
+        partner_uncap_toggle_id = -1;
+        menu_http_kind = 0;
+        end_partner_purchase_activity(false);
+        show_partner_message(U"无法连接至服务器");
+        return;
+    }
 }
 
 void ClientScreen::partner_caption_color(const NodePath &path, const Color &color) {
@@ -765,7 +918,6 @@ void ClientScreen::show_partner_message(const String &message) {
     confirm->set_name("Confirm");
     panel->add_child(confirm);
     confirm->set_texture_normal(load_tex("infalsus/button-basic.png"));
-    confirm->set_texture_hover(load_tex("infalsus/button-basic-selected.png"));
     confirm->set_texture_pressed(load_tex("infalsus/button-basic-selected.png"));
     confirm->set_ignore_texture_size(true);
     confirm->set_stretch_mode(TextureButton::STRETCH_SCALE);
@@ -775,8 +927,6 @@ void ClientScreen::show_partner_message(const String &message) {
     Label *caption = inked(confirm, "Caption", U"确定", 24, regular, PALE, Color(0, 0, 0, 0), 0);
     caption->set_size(Vector2(256, 64));
 
-    confirm->connect("mouse_entered", Callable(caption, "add_theme_color_override").bind("font_color", PRESSED_INK));
-    confirm->connect("mouse_exited", Callable(caption, "add_theme_color_override").bind("font_color", PALE));
     confirm->connect("pressed", Callable(this, "close_partner_modal"));
     animate_partner_modal(root);
     layout();
@@ -1003,7 +1153,7 @@ void ClientScreen::partner_purchase_check_next() {
     
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Accept: application/json");
     menu_http_kind = 4;
     
@@ -1127,7 +1277,7 @@ void ClientScreen::confirm_partner_purchase() {
     }
     PackedStringArray headers;
     headers.push_back("Authorization: Bearer " + token.trim_prefix("Bearer ").trim_prefix("bearer "));
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Accept: application/json");
     headers.push_back("Content-Type: application/x-www-form-urlencoded");
     menu_commit_id = id;

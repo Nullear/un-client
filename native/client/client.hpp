@@ -188,6 +188,7 @@ class ClientScreen : public Control {
     bool dialog_locked_preview = false;
     bool dialog_portrait_slide = true;
     Control *partner_details = nullptr;
+    Control *partner_details_content = nullptr;
     Control *partner_modal = nullptr;
     bool partner_details_open = false;
     bool partner_detail_busy = false;
@@ -205,6 +206,8 @@ class ClientScreen : public Control {
     Label *partner_purchase_requirement_label = nullptr;
     int partner_grant_id = -1;
     int partner_stat_id = -2;
+    int partner_uncap_toggle_id = -1;
+    bool partner_uncap_refresh_pending = false;
     float partner_frag_shown = 0;
     float partner_level_shown = 0;
     float partner_fill_shown = 0;
@@ -348,6 +351,7 @@ class ClientScreen : public Control {
     void refresh_konzetsu_hub_visuals();
     int konzetsu_new_clear_mask(const Array &previous, const Array &tasks);
     void step_konzetsu_clear_animation(double delta);
+    void save_konzetsu_task_snapshot();
     void begin_konzetsu_tasks_request();
     void step_konzetsu_task_activity(double delta);
     void konzetsu_tasks_completed(int result, int response_code, const PackedStringArray &headers, const PackedByteArray &body);
@@ -363,9 +367,9 @@ class ClientScreen : public Control {
     void begin_close_character_select();
     void apply_hub_partner(int id, bool slide);
     void menu_fetch_user();
+    void menu_fetch_game_info();
     void menu_commit_character(int id);
     void menu_http_completed(int result, int response_code, const PackedStringArray &headers, const PackedByteArray &body);
-    void menu_hover(int which, int hovered);
     void select_character(int id);
     void show_partner_preview(int id);
     void apply_partner_aside(int id);
@@ -377,8 +381,11 @@ class ClientScreen : public Control {
     void restore_partner_aside();
     void finish_partner_detail_transition(bool open);
     void refresh_partner_details();
+    void toggle_partner_uncap();
+    void toggle_partner_skill_seal();
     void preview_partner_level(int level);
     void cycle_partner_preview();
+    void level_up_partner();
     void open_partner_purchase();
     void close_partner_modal();
     void confirm_partner_purchase();

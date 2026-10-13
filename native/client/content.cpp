@@ -66,6 +66,7 @@ struct WarmJob {
     String relative;
     String file;
     bool jpg = false;
+    bool webp = false;
     Ref<Image> image;
     std::atomic<bool> done{false};
     int64_t task = -1;
@@ -303,6 +304,8 @@ void warm_decode(void *userdata) {
         if (job->jpg) {
             std::lock_guard<std::mutex> lock(jpeg_decode_mutex);
             err = decoded->load_jpg_from_buffer(bytes);
+        } else if (job->webp) {
+            err = decoded->load_webp_from_buffer(bytes);
         } else {
             err = decoded->load_png_from_buffer(bytes);
         }
@@ -332,32 +335,49 @@ Ref<Texture2D> content::image(const String &relative) {
         UtilityFunctions::print(String("[image] cache hit relative=") + relative);
         return image_cache.at(relative);
     }
+    const auto packaged_fallback = [&]() -> Ref<Texture2D> {
+        const String resource_path = String("res://assets/resources/img/") + relative;
+        Ref<Texture2D> packaged;
+        if (ResourceLoader::get_singleton()->exists(resource_path))
+            packaged = ResourceLoader::get_singleton()->load(resource_path);
+        if (packaged.is_valid()) {
+            image_cache[relative] = packaged;
+            failed_images.erase(relative);
+            UtilityFunctions::print(String("[image] packaged fallback relative=") + relative);
+        } else {
+            failed_images[relative] = true;
+            UtilityFunctions::printerr(String("[image] missing in user and res assets relative=") + relative);
+        }
+        return packaged;
+    };
     const String file = path(relative);
     UtilityFunctions::print(String("[image] request relative=") + relative
         + String(" file=") + ProjectSettings::get_singleton()->globalize_path(file));
     if (!FileAccess::file_exists(file)) {
-        UtilityFunctions::printerr(String("[image] missing relative=") + relative + String(" file=") + file);
-        failed_images[relative] = true;
-        return Ref<Texture2D>();
+        UtilityFunctions::print(String("[image] user asset missing; trying packaged relative=") + relative);
+        return packaged_fallback();
     }
     Ref<Image> decoded;
     decoded.instantiate();
     PackedByteArray bytes = open_bytes(file);
-    const bool jpg = relative.to_lower().ends_with(".jpg") || relative.to_lower().ends_with(".jpeg");
+    const String lower_relative = relative.to_lower();
+    const bool jpg = lower_relative.ends_with(".jpg") || lower_relative.ends_with(".jpeg");
+    const bool webp = lower_relative.ends_with(".webp");
     UtilityFunctions::print(String("[image] bytes relative=") + relative
         + String(" size=") + String::num_int64(bytes.size())
         + String(" jpg=") + (jpg ? "true" : "false"));
     if (jpg && !valid_jpeg(bytes)) {
         UtilityFunctions::printerr(String("[image] invalid jpeg relative=") + relative
             + String(" ") + jpeg_summary(bytes));
-        failed_images[relative] = true;
-        return Ref<Texture2D>();
+        return packaged_fallback();
     }
     Error err = OK;
     UtilityFunctions::print(String("[image] decode begin relative=") + relative);
     if (jpg) {
         std::lock_guard<std::mutex> lock(jpeg_decode_mutex);
         err = decoded->load_jpg_from_buffer(bytes);
+    } else if (webp) {
+        err = decoded->load_webp_from_buffer(bytes);
     } else {
         err = decoded->load_png_from_buffer(bytes);
     }
@@ -405,11 +425,10 @@ Ref<Texture2D> content::image(const String &relative) {
         }
     }
     if (err != OK) {
-        failed_images[relative] = true;
         UtilityFunctions::printerr(String("[image] decode failed relative=") + relative
             + String(" ") + (jpg ? jpeg_summary(bytes) : String("bytes=") + String::num_int64(bytes.size()))
             + String(" err=") + String::num_int64(err));
-        return Ref<Texture2D>();
+        return packaged_fallback();
     }
     UtilityFunctions::print(String("[image] decode ok relative=") + relative
         + String(" width=") + String::num_int64(decoded->get_width())
@@ -419,8 +438,8 @@ Ref<Texture2D> content::image(const String &relative) {
         image_cache[relative] = result;
         UtilityFunctions::print(String("[image] texture ok relative=") + relative);
     } else {
-        failed_images[relative] = true;
         UtilityFunctions::printerr(String("[image] texture creation failed relative=") + relative);
+        return packaged_fallback();
     }
     return result;
 }
@@ -429,13 +448,22 @@ Ref<Texture2D> content::cached_image(const String &relative) {
     return image_cache.count(relative) ? image_cache.at(relative) : Ref<Texture2D>();
 }
 
+void content::invalidate_image(const String &relative) {
+    image_cache.erase(relative);
+    failed_images.erase(relative);
+}
+
 bool content::image_failed(const String &relative) {
     return failed_images.count(relative) && failed_images.at(relative);
 }
 
 void content::begin_gallery_images(const PackedStringArray &relative_paths) {
     for (const String &relative : relative_paths) {
-        if (image_cache.count(relative) || image_failed(relative) || !FileAccess::file_exists(path(relative))) continue;
+        if (image_cache.count(relative) || image_failed(relative)) continue;
+        if (!FileAccess::file_exists(path(relative))) {
+            content::image(relative);
+            continue;
+        }
         bool already_queued = false;
         for (const auto &queued : gallery_live)
             if (queued->relative == relative) already_queued = true;
@@ -443,7 +471,9 @@ void content::begin_gallery_images(const PackedStringArray &relative_paths) {
         auto job = std::make_unique<WarmJob>();
         job->relative = relative;
         job->file = path(relative);
-        job->jpg = relative.ends_with(".jpg");
+        const String lower_relative = relative.to_lower();
+        job->jpg = lower_relative.ends_with(".jpg") || lower_relative.ends_with(".jpeg");
+        job->webp = lower_relative.ends_with(".webp");
         WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
         if (!pool || pool->add_native_task(&warm_decode, job.get(), true, "Task gallery") < 0) continue;
         gallery_live.push_back(std::move(job));
@@ -455,7 +485,7 @@ void content::step_gallery_images() {
         WarmJob *job = gallery_live[i].get();
         if (!job->done.load(std::memory_order_acquire)) continue;
         if (job->image.is_valid()) image_cache[job->relative] = ImageTexture::create_from_image(job->image);
-        else failed_images[job->relative] = true;
+        else content::image(job->relative);
         gallery_live.erase(gallery_live.begin() + i);
     }
 }
@@ -544,7 +574,11 @@ static Dictionary find_stat_map(const Variant &value) {
             if (number_value(row.get("level_exp", row.get("levelExp", Variant())), number)) entry["level_exp"] = number;
             const Variant flag = row.get("uncapped", row.get("is_uncapped", false));
             entry["uncapped"] = flag == Variant(true) || int(flag) == 1 || String(flag).to_lower() == "true";
-            if (!entry.has("frag") && !entry.has("level") && !entry.has("exp")) continue;
+            const Variant override_flag = row.get("is_uncapped_override", false);
+            entry["uncapped_override"] = override_flag == Variant(true) || int(override_flag) == 1
+                || String(override_flag).to_lower() == "true";
+            if (!entry.has("frag") && !entry.has("level") && !entry.has("exp")
+                    && !entry.has("uncapped") && !entry.has("uncapped_override")) continue;
             stats[String::num_int64(int(id))] = entry;
         }
         return stats;
@@ -583,6 +617,30 @@ static bool find_named_number(const Variant &value, const String &key, double &o
     return false;
 }
 
+static bool find_named_boolean(const Variant &value, const String &key, bool &out) {
+    if (value.get_type() == Variant::ARRAY) {
+        const Array list = value;
+        for (int i = 0; i < list.size(); ++i)
+            if (find_named_boolean(list[i], key, out)) return true;
+        return false;
+    }
+    if (value.get_type() != Variant::DICTIONARY) return false;
+    const Dictionary object = value;
+    const Array keys = object.keys();
+    for (int i = 0; i < keys.size(); ++i) {
+        if (String(keys[i]).to_lower() != key) continue;
+        const Variant flag = object[keys[i]];
+        if (flag.get_type() == Variant::BOOL) out = bool(flag);
+        else if (flag.get_type() == Variant::INT || flag.get_type() == Variant::FLOAT) out = double(flag) != 0;
+        else if (flag.get_type() == Variant::STRING) out = String(flag).to_lower() == "true" || String(flag) == "1";
+        else return false;
+        return true;
+    }
+    for (int i = 0; i < keys.size(); ++i)
+        if (find_named_boolean(object[keys[i]], key, out)) return true;
+    return false;
+}
+
 static Dictionary read_stats() {
     load_partner_config();
     return partner_stats();
@@ -603,7 +661,47 @@ void content::remember_online(const Variant &parsed) {
     double ticket = 0;
     if (find_named_number(parsed, "ticket", ticket)) config->set_value("partners", "ticket", String::num_int64(int(ticket)));
     else config->set_value("partners", "ticket", "");
+    bool sealed = false;
+    if (find_named_boolean(parsed, "is_skill_sealed", sealed))
+        config->set_value("account", "skill_sealed", sealed);
+    double insight = 0;
+    find_named_number(parsed, "insight_state", insight);
+    int insight_state = int(insight);
+    if (insight_state < 1 || insight_state > 6) insight_state = 0;
+    config->set_value("account", "insight_state", insight_state);
+    
+    // Save ether drop count (cores type 0)
+    double ether_drops = 0;
+    if (find_named_number(parsed, "ether_drops", ether_drops)) {
+        config->set_value("account", "ether_drops", String::num_int64(int(ether_drops)));
+    }
+    
     config->save("user://client.cfg");
+}
+
+void content::remember_game_info(const Variant &parsed) {
+    load_partner_config();
+    if (parsed.get_type() != Variant::DICTIONARY) return;
+    const Dictionary info = parsed;
+    double core_exp = 0;
+    if (find_named_number(info, "core_exp", core_exp) && core_exp > 0)
+        partner_config->set_value("game_info", "core_exp", String::num_int64(int(core_exp)));
+    Variant steps_value = info.get("level_steps", Variant());
+    if (steps_value.get_type() == Variant::ARRAY) {
+        const Array steps = steps_value;
+        Dictionary level_table;
+        for (int i = 0; i < steps.size(); ++i) {
+            if (steps[i].get_type() != Variant::DICTIONARY) continue;
+            const Dictionary step = steps[i];
+            double level = 0, exp = 0;
+            if (number_value(step.get("level", Variant()), level)
+                    && number_value(step.get("level_exp", step.get("levelExp", Variant())), exp))
+                level_table[String::num_int64(int(level))] = int(exp);
+        }
+        if (!level_table.is_empty())
+            partner_config->set_value("game_info", "level_exp_table", JSON::stringify(level_table));
+    }
+    partner_config->save("user://client.cfg");
 }
 
 bool content::unlocked(int id) {
@@ -622,6 +720,18 @@ int content::level_of(int id) {
     return entry.has("level") ? int(entry["level"]) : -1;
 }
 
+bool content::insight_level_unknown(int id, bool logged_in) {
+    if (id != 72) return false;
+    load_partner_config();
+    const int insight_state = int(partner_config->get_value("account", "insight_state", 0));
+    if (insight_state < 3) return true;
+    const Dictionary stats = partner_stats();
+    const String key = String::num_int64(id);
+    if (!stats.has(key)) return logged_in;
+    const Dictionary entry = stats[key];
+    return logged_in && double(entry.get("exp", 0)) <= 0;
+}
+
 double content::exp_into_level(int id) {
     const Dictionary stats = read_stats();
     if (!stats.has(String::num_int64(id))) return -1;
@@ -634,6 +744,23 @@ bool content::uncapped(int id) {
     const Dictionary stats = read_stats();
     if (!stats.has(String::num_int64(id))) return false;
     return bool(Dictionary(stats[String::num_int64(id)]).get("uncapped", false));
+}
+
+bool content::uncapped_override(int id) {
+    const Dictionary stats = read_stats();
+    if (!stats.has(String::num_int64(id))) return false;
+    return bool(Dictionary(stats[String::num_int64(id)]).get("uncapped_override", false));
+}
+
+bool content::skill_sealed() {
+    load_partner_config();
+    return bool(partner_config->get_value("account", "skill_sealed", false));
+}
+
+void content::set_skill_sealed(bool sealed) {
+    load_partner_config();
+    partner_config->set_value("account", "skill_sealed", sealed);
+    partner_config->save("user://client.cfg");
 }
 
 int content::ticket() {
@@ -694,6 +821,36 @@ void content::grant_purchased(int id) {
     stats[key] = entry;
     config->set_value("partners", "stats", JSON::stringify(stats));
     config->save("user://client.cfg");
+}
+
+int content::ether_drop_count() {
+    load_partner_config();
+    const String text = String(partner_config->get_value("account", "ether_drops", ""));
+    return text.is_valid_int() ? text.to_int() : 0;
+}
+
+int content::core_exp_value() {
+    load_partner_config();
+    const String text = String(partner_config->get_value("game_info", "core_exp", ""));
+    return text.is_valid_int() ? text.to_int() : -1;
+}
+
+Dictionary content::level_exp_table() {
+    load_partner_config();
+    const String text = String(partner_config->get_value("game_info", "level_exp_table", ""));
+    const Variant parsed = text.begins_with("{") ? JSON::parse_string(text) : Variant();
+    return parsed.get_type() == Variant::DICTIONARY ? Dictionary(parsed) : Dictionary();
+}
+
+int content::next_level_exp(int current_level) {
+    const Dictionary table = level_exp_table();
+    const String key = String::num_int64(current_level + 1);
+    if (table.has(key)) {
+        const Variant value = table[key];
+        if (value.get_type() == Variant::INT || value.get_type() == Variant::FLOAT)
+            return int(value);
+    }
+    return -1;
 }
 
 String content::random_jacket() {
@@ -859,7 +1016,9 @@ bool content::warmup_partner_assets_step(int) {
             continue;
         }
         job->file = path(job->relative);
-        job->jpg = job->relative.ends_with(".jpg");
+        const String lower_relative = job->relative.to_lower();
+        job->jpg = lower_relative.ends_with(".jpg") || lower_relative.ends_with(".jpeg");
+        job->webp = lower_relative.ends_with(".webp");
         WarmJob *raw = job.get();
         const int64_t task = pool ? pool->add_native_task(&warm_decode, raw, true, "Warm partner") : -1;
         if (task < 0) {

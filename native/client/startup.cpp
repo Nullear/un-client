@@ -55,7 +55,6 @@ using namespace godot;
 
 namespace {
 static constexpr float W = 1920, H = 1080;
-static constexpr const char *IMAGE = "res://assets/resources/img/";
 static constexpr const char *ASSETS = "user://assets";
 enum RequestKind { NONE = 0, AUTH_REFRESH, LOGIN, MANIFEST, DOWNLOAD };
 enum ContentAction { DISMISS = 0, RETRY = 1, OPEN_SITE = 2 };
@@ -65,7 +64,7 @@ static Vector2 pos(float x, float y, float w, float h, float ax = .5f, float ay 
 }
 
 static Ref<Texture2D> tex(const String &name) {
-    return ResourceLoader::get_singleton()->load(IMAGE + name);
+    return content::image(name);
 }
 
 static TextureRect *sprite(Control *parent, const String &name, const String &file,
@@ -375,12 +374,13 @@ void ClientScreen::startup_step_warmup() {
             UtilityFunctions::push_warning("Startup title hardware decoder could not be prepared; it will retry at transition");
     } else if (startup_preload_index < 6) {
         const char *files[] = {
-            "res://assets/resources/img/startup/1080/title.png",
-            "res://assets/resources/img/startup/activity_icon.png",
+            "startup/1080/title.png",
+            "startup/activity_icon.png",
             "res://assets/resources/audio/bgm/title_full.ogg",
             "res://assets/resources/audio/bgm/title_loop.ogg",
         };
-        ResourceLoader::get_singleton()->load(files[startup_preload_index - 2]);
+        if (startup_preload_index < 4) content::image(files[startup_preload_index - 2]);
+        else ResourceLoader::get_singleton()->load(files[startup_preload_index - 2]);
     }
     if (startup_preload_index < 6) ++startup_preload_index;
     const bool images = content::warmup_partner_assets_step();
@@ -438,7 +438,7 @@ void ClientScreen::startup_start_content_check() {
     transport_tries = 0;
     startup_request_kind = AUTH_REFRESH;
     PackedStringArray headers;
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Authorization: " + basic_auth(user, password));
     headers.push_back("Content-Type: application/x-www-form-urlencoded");
     headers.push_back("grant_type: password");
@@ -455,7 +455,7 @@ void ClientScreen::startup_fetch_manifest() {
     startup_http->set_download_file("");
     startup_http->set_timeout(15);
     PackedStringArray headers;
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("DeviceId: " + device_id());
     startup_activity_wait = true;
     startup_activity_delay = 0;
@@ -499,7 +499,7 @@ void ClientScreen::startup_request_completed(int result, int response_code,
             if (!user.is_empty() && !password.is_empty()) {
                 startup_request_kind = request;
                 PackedStringArray headers;
-                headers.push_back("AppVersion: 1.0.0");
+                headers.push_back("AppVersion: 1.1");
                 headers.push_back("Authorization: " + basic_auth(user, password));
                 headers.push_back("Content-Type: application/x-www-form-urlencoded");
                 headers.push_back("grant_type: password");
@@ -776,7 +776,7 @@ void ClientScreen::startup_submit_login() {
     startup_set_busy(true);
     startup_request_kind = LOGIN;
     PackedStringArray headers;
-    headers.push_back("AppVersion: 1.0.0");
+    headers.push_back("AppVersion: 1.1");
     headers.push_back("Authorization: " + basic_auth(user, password));
     headers.push_back("Content-Type: application/x-www-form-urlencoded");
     headers.push_back("grant_type: password");
@@ -1324,7 +1324,7 @@ bool ClientScreen::startup_launch_slot(int slot, int index, int attempt) {
 #endif
     fetch->timeout = std::clamp(30.0 + double(item.get("length", 0)) / 32.0 / 1000.0, 60.0, 600.0);
     fetch->headers.push_back(to_utf8("Authorization: " + bearer_auth(startup_auth_token)));
-    fetch->headers.push_back("AppVersion: 1.0.0");
+    fetch->headers.push_back("AppVersion: 1.1");
     FetchJob *raw = fetch.get();
     try {
         raw->thread = std::thread(fetch_body, raw);
@@ -1414,8 +1414,10 @@ void ClientScreen::startup_collect_seals() {
         } else {
             ++startup_manifest_done;
             startup_manifest_bytes_done += n;
-            if (job->index >= 0 && job->index < startup_missing.size())
+            if (job->index >= 0 && job->index < startup_missing.size()) {
+                content::invalidate_image(asset_path(startup_missing[job->index]));
                 remember_asset(startup_missing[job->index]);
+            }
         }
         seal_live.erase(seal_live.begin() + i);
     }
