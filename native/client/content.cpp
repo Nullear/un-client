@@ -79,7 +79,8 @@ int warm_limit() {
     int count = OS::get_singleton()->get_processor_count();
     if (OS::get_singleton()->get_name() == "Android") return 2;
     if (count < 4) count = 4;
-    if (count > 8) count = 8;
+    // Reduce max concurrent tasks from 8 to 4 to prevent memory spikes
+    if (count > 4) count = 4;
     return count;
 }
 
@@ -286,41 +287,52 @@ Ref<Image> decode_jpeg_with_wic(const PackedByteArray &bytes, HRESULT &failure) 
 
 void warm_decode(void *userdata) {
     WarmJob *job = static_cast<WarmJob *>(userdata);
-    UtilityFunctions::print(String("[warm] request relative=") + job->relative
-        + String(" file=") + job->file);
-    PackedByteArray bytes = open_bytes(job->file);
-    if (!bytes.is_empty()) {
-        UtilityFunctions::print(String("[warm] bytes relative=") + job->relative
-            + String(" size=") + String::num_int64(bytes.size()));
-        if (job->jpg && !valid_jpeg(bytes)) {
-            UtilityFunctions::printerr(String("[warm] invalid jpeg relative=") + job->relative
-                + String(" size=") + String::num_int64(bytes.size()));
-            job->done.store(true, std::memory_order_release);
-            return;
-        }
-        Ref<Image> decoded;
-        decoded.instantiate();
-        Error err = OK;
-        if (job->jpg) {
-            std::lock_guard<std::mutex> lock(jpeg_decode_mutex);
-            err = decoded->load_jpg_from_buffer(bytes);
-        } else if (job->webp) {
-            err = decoded->load_webp_from_buffer(bytes);
-        } else {
-            err = decoded->load_png_from_buffer(bytes);
-        }
-        if (err == OK) {
-            job->image = decoded;
-            UtilityFunctions::print(String("[warm] decode ok relative=") + job->relative
-                + String(" width=") + String::num_int64(decoded->get_width())
-                + String(" height=") + String::num_int64(decoded->get_height()));
-        } else {
-            UtilityFunctions::printerr(String("[warm] decode failed relative=") + job->relative
-                + String(" err=") + String::num_int64(err));
-        }
-    } else {
-        UtilityFunctions::printerr(String("[warm] missing or empty relative=") + job->relative
+    
+    // Add try-catch to prevent crashes from unexpected errors
+    try {
+        UtilityFunctions::print(String("[warm] request relative=") + job->relative
             + String(" file=") + job->file);
+        PackedByteArray bytes = open_bytes(job->file);
+        if (!bytes.is_empty()) {
+            UtilityFunctions::print(String("[warm] bytes relative=") + job->relative
+                + String(" size=") + String::num_int64(bytes.size()));
+            if (job->jpg && !valid_jpeg(bytes)) {
+                UtilityFunctions::printerr(String("[warm] invalid jpeg relative=") + job->relative
+                    + String(" size=") + String::num_int64(bytes.size()));
+                job->done.store(true, std::memory_order_release);
+                return;
+            }
+            Ref<Image> decoded;
+            decoded.instantiate();
+            if (!decoded.is_valid()) {
+                UtilityFunctions::printerr(String("[warm] failed to instantiate image relative=") + job->relative);
+                job->done.store(true, std::memory_order_release);
+                return;
+            }
+            Error err = OK;
+            if (job->jpg) {
+                std::lock_guard<std::mutex> lock(jpeg_decode_mutex);
+                err = decoded->load_jpg_from_buffer(bytes);
+            } else if (job->webp) {
+                err = decoded->load_webp_from_buffer(bytes);
+            } else {
+                err = decoded->load_png_from_buffer(bytes);
+            }
+            if (err == OK && decoded->get_width() > 0 && decoded->get_height() > 0) {
+                job->image = decoded;
+                UtilityFunctions::print(String("[warm] decode ok relative=") + job->relative
+                    + String(" width=") + String::num_int64(decoded->get_width())
+                    + String(" height=") + String::num_int64(decoded->get_height()));
+            } else {
+                UtilityFunctions::printerr(String("[warm] decode failed relative=") + job->relative
+                    + String(" err=") + String::num_int64(err));
+            }
+        } else {
+            UtilityFunctions::printerr(String("[warm] missing or empty relative=") + job->relative
+                + String(" file=") + job->file);
+        }
+    } catch (...) {
+        UtilityFunctions::printerr(String("[warm] exception caught while decoding relative=") + job->relative);
     }
     job->done.store(true, std::memory_order_release);
 }
@@ -966,6 +978,9 @@ void content::warmup_partner_assets_begin() {
     warmup_index = 0;
     warmup_ready = 0;
     warmup_files.clear();
+    
+    // Load icons first (small, fast), then portraits (large, slower)
+    // This prevents memory spikes while keeping UI smooth
     Ref<DirAccess> directory = DirAccess::open(path("char"));
     if (!directory.is_valid()) return;
     PackedStringArray files = directory->get_files();
@@ -975,6 +990,8 @@ void content::warmup_partner_assets_begin() {
             warmup_files.push_back(String("char/") + file);
         }
     }
+    
+    // Load portraits after icons to reduce peak memory usage
     Ref<DirAccess> portraits = DirAccess::open(path("char/1080"));
     if (portraits.is_valid()) {
         const PackedStringArray portrait_files = portraits->get_files();
@@ -1006,7 +1023,17 @@ bool content::warmup_partner_assets_step(int) {
         warm_live.erase(warm_live.begin() + index);
         ++uploaded;
     }
-    const int limit = warm_limit();
+    
+    int limit = warm_limit();
+    // Reduce concurrency for large portraits to prevent memory spikes
+    // Icons load with full concurrency (4), portraits with reduced (2)
+    if (warmup_index < int(warmup_files.size())) {
+        const String &next_file = warmup_files[warmup_index];
+        if (next_file.contains("char/1080/")) {
+            limit = std::min(limit, 2);
+        }
+    }
+    
     WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
     while (warmup_index < int(warmup_files.size()) && int(warm_live.size()) < limit) {
         auto job = std::make_unique<WarmJob>();

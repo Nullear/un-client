@@ -580,6 +580,17 @@ void ClientScreen::stop_music() {
 void ClientScreen::play_sfx(const String &path) {
     Ref<AudioStream> clip = ResourceLoader::get_singleton()->load(AUDIO + path);
     if (!clip.is_valid()) return;
+    if (path == "konzetsu/challenge_chain_break.wav") {
+        // The original audio manager lets the 2.136s clear sound finish
+        // while the player opens a node after the shorter visual transition.
+        auto *clear_sfx = memnew(AudioStreamPlayer);
+        clear_sfx->set_name("KonzetsuClearSFX");
+        add_child(clear_sfx);
+        clear_sfx->set_stream(clip);
+        clear_sfx->connect("finished", Callable(clear_sfx, "queue_free"));
+        clear_sfx->play();
+        return;
+    }
     if (!sfx) {
         sfx = memnew(AudioStreamPlayer);
         add_child(sfx);

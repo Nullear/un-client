@@ -327,6 +327,7 @@ void ClientScreen::build_menu() {
     const Color cyan_title(217.f / 255, 254.f / 255, 254.f / 255);
     const Color ink(15.f / 255, 25.f / 255, 36.f / 255);
     const Color teal(66.f / 255, 199.f / 255, 198.f / 255);
+    const Color cyan_pressed(160.f / 255, 200.f / 255, 200.f / 255); // Pressed state color for cyan text
     caption(stage, "PlayerTag", U"玩家", -833.5, 435, 54, 11, ink, true, true);
     caption(stage, "MusicTitleShadow", U"探索", 36.119, 379.97, 300, 26, Color(cyan_title.r, cyan_title.g, cyan_title.b, 66.f / 255), false, true);
     caption(stage, "MusicTitle", U"探索", 37.111, 380.957, 300, 26, cyan_title, false, true);
@@ -342,11 +343,22 @@ void ClientScreen::build_menu() {
     caption(stage, "Cleared", U"已完成", 245.83, 230.745, 100, 11, cyan, false, true);
     caption(stage, "ClearedValue", String::num_int64(konzetsu_saved_completion_count()) + "/6",
         270.423, 209.148, 120, 19, cyan, false, true);
-    caption(stage, "SelectSong", U"每日任务", 679.154, 226.761, 250, 23, cyan, true, true);
+    Label *select_song = caption(stage, "SelectSong", U"每日任务", 679.154, 226.761, 250, 23, cyan, true, true);
     caption(stage, "ReplayTutorial", U"重播教程", 659.884, 379.375, 280, 20, Color(193.f / 255, 224.f / 255, 227.f / 255), true, true);
     caption(stage, "ScenarioTitleShadow", U"剧情", 116.16, 110.196, 260, 26, Color(cyan_title.r, cyan_title.g, cyan_title.b, 66.f / 255), false, true);
     caption(stage, "ScenarioTitle", U"剧情", 117.158, 111.206, 260, 26, cyan_title, false, true);
-    caption(stage, "ViewTimeline", U"重播剧情", 679.876, -44.1, 250, 23, cyan, true, true);
+    Label *view_timeline = caption(stage, "ViewTimeline", U"重播剧情", 679.876, -44.1, 250, 23, cyan, true, true);
+    
+    // Add button press color changes for main menu buttons
+    if (select_song) {
+        music_hit->connect("button_down", Callable(this, "partner_caption_color").bind(select_song->get_path(), cyan_pressed));
+        music_hit->connect("button_up", Callable(this, "partner_caption_color").bind(select_song->get_path(), cyan));
+    }
+    if (view_timeline) {
+        timeline_hit->connect("button_down", Callable(this, "partner_caption_color").bind(view_timeline->get_path(), cyan_pressed));
+        timeline_hit->connect("button_up", Callable(this, "partner_caption_color").bind(view_timeline->get_path(), cyan));
+    }
+    
     caption(stage, "PrimaryTabText", U"主界面", -478, 491.013, 150, 15, Color(70.f / 255, 80.f / 255, 87.f / 255), true, true);
     caption(stage, "SecondaryTabText", U"总览", -306.5, 489.548, 175, 15, Color(70.f / 255, 80.f / 255, 87.f / 255), true, true);
     const String name = selected_row.get("name", "");
@@ -563,7 +575,7 @@ void ClientScreen::build_konzetsu() {
 
 void ClientScreen::refresh_konzetsu_hub_visuals() {
     if (!hub_content) return;
-    const bool all_complete = !konzetsu_pending_clear_mask && konzetsu_all_daily_tasks_complete(konzetsu_tasks);
+    const bool all_complete = !(konzetsu_pending_clear_mask & 31) && konzetsu_all_daily_tasks_complete(konzetsu_tasks);
     const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
         "HubCenterChainRight", "HubBottomChainLeft", "HubBottomChainRight"};
     for (int i = 0; i < 6; ++i) {
@@ -597,7 +609,10 @@ void ClientScreen::refresh_konzetsu_hub_visuals() {
         for (const char *suffix : {"BadgeInactive", "RippleInactive", "ChainInactive"})
             set_visible(prefix + String(suffix), completed);
         if (i == 5) {
-            if (Control *lock = art["HubNode6Locked"]) lock->set_visible(!all_complete);
+            if (Control *lock = art["HubNode6Locked"]) {
+                lock->set_visible(!all_complete);
+                lock->set_modulate(Color(1, 1, 1, 1));
+            }
             if (BaseButton *hit = Object::cast_to<BaseButton>(hub_content->get_node_or_null("HubNode6Hit")))
                 hit->set_disabled(!all_complete);
         }
@@ -622,25 +637,68 @@ int ClientScreen::konzetsu_new_clear_mask(const Array &previous, const Array &ta
 void ClientScreen::step_konzetsu_clear_animation(double delta) {
     if (!konzetsu_pending_clear_mask || !hub_content) return;
     if (konzetsu_clear_seconds < 0) konzetsu_clear_seconds = 0;
+    const double previous = konzetsu_clear_seconds;
     konzetsu_clear_seconds += delta;
-    const float fade = std::clamp(float(konzetsu_clear_seconds / .7), 0.f, 1.f);
-    const float chain_fade = std::clamp(float(konzetsu_clear_seconds / .3), 0.f, 1.f);
+    // setupIntroAnimations schedules the original clear callback after 0.6s.
+    if (konzetsu_clear_seconds < .6) return;
+    if (previous < .6) play_sfx("konzetsu/challenge_chain_break.wav");
+    const double elapsed = konzetsu_clear_seconds - .6;
+    const auto ease_out = [](double time, double duration) {
+        const float u = std::clamp(float(time / duration), 0.f, 1.f);
+        return 1.f - std::pow(1.f - u, 3.f);
+    };
+    const float fade = ease_out(elapsed, .7);
+    const float chain_fade = ease_out(elapsed, .3);
+    // The original wraps the entire FadeOut/CallFunc/FadeIn sequence in
+    // EaseCubicActionOut, so ease its combined clock rather than each half.
+    const float inactive_time = ease_out(elapsed, .6) * .6f;
+    const float inactive_out = std::clamp(inactive_time / .3f, 0.f, 1.f);
+    const float inactive_in = std::clamp((inactive_time - .3f) / .3f, 0.f, 1.f);
+    const bool unlock = (konzetsu_pending_clear_mask & 31)
+        && konzetsu_all_daily_tasks_complete(konzetsu_tasks);
+    const bool deactivate_sixth = (konzetsu_pending_clear_mask & 32) != 0;
     const char *center_chains[] = {"HubTopChainLeft", "HubTopChainRight", "HubCenterChainLeft",
         "HubCenterChainRight", "HubBottomChainLeft", "HubBottomChainRight"};
     for (int i = 0; i < 6; ++i) {
-        if (!(konzetsu_pending_clear_mask & (1 << i))) continue;
         const String prefix = "HubNode" + String::num_int64(i + 1);
-        for (const char *suffix : {"Hit", "Number", "Swirl", "Dim", "Badge", "Ripple", "Chain"}) {
-            if (Control *node = art[(prefix + String(suffix)).utf8().get_data()]) {
-                node->show();
-                const bool disappearing = String(suffix) == "Hit" || String(suffix) == "Number";
-                node->set_modulate(Color(1, 1, 1, disappearing ? 1.f - fade : fade));
+        // transitionToCleared(false) establishes the clear state before
+        // transitionToInactive(true) fades out, swaps images, then fades in.
+        if ((i < 5 && unlock) || (i == 5 && deactivate_sixth)) {
+            for (const char *suffix : {"Hit", "Number"})
+                if (Control *node = art[(prefix + String(suffix)).utf8().get_data()])
+                    node->set_modulate(Color(1, 1, 1, 0));
+            for (const char *suffix : {"Swirl", "Dim"})
+                if (Control *node = art[(prefix + String(suffix)).utf8().get_data()]) {
+                    node->show();
+                    node->set_modulate(Color(1, 1, 1, 1));
+                }
+            for (const char *suffix : {"Badge", "Ripple", "Chain"}) {
+                if (Control *node = art[(prefix + String(suffix)).utf8().get_data()]) {
+                    node->set_visible(inactive_time < .3f);
+                    node->set_modulate(Color(1, 1, 1, 1.f - inactive_out));
+                }
+                if (Control *node = art[(prefix + String(suffix) + String("Inactive")).utf8().get_data()]) {
+                    node->set_visible(inactive_time >= .3f);
+                    node->set_modulate(Color(1, 1, 1, inactive_in));
+                }
+            }
+        } else if (konzetsu_pending_clear_mask & (1 << i)) {
+            for (const char *suffix : {"Hit", "Number", "Swirl", "Dim", "Badge", "Ripple", "Chain"}) {
+                if (Control *node = art[(prefix + String(suffix)).utf8().get_data()]) {
+                    node->show();
+                    const bool disappearing = String(suffix) == "Hit" || String(suffix) == "Number";
+                    node->set_modulate(Color(1, 1, 1, disappearing ? 1.f - fade : fade));
+                }
             }
         }
-        if (i < 5)
+        if (konzetsu_pending_clear_mask & (1 << i))
             if (Control *chain = art[center_chains[i]]) chain->set_modulate(Color(1, 1, 1, 1.f - chain_fade));
     }
-    if (konzetsu_clear_seconds >= .7) {
+    if (unlock)
+        if (Control *lock = art["HubNode6Locked"])
+            lock->set_modulate(Color(1, 1, 1, 1.f - chain_fade));
+    const double duration = unlock || (konzetsu_pending_clear_mask == 32) ? .6 : .7;
+    if (elapsed >= duration) {
         konzetsu_pending_clear_mask = 0;
         konzetsu_clear_seconds = -1;
         refresh_konzetsu_hub_visuals();
@@ -652,13 +710,6 @@ void ClientScreen::set_konzetsu_progress(const Dictionary &completed_songs) {
     // Keys are challenge IDs (1..6); values are the completed song IDs.
     konzetsu_completed_songs = completed_songs.duplicate(true);
     refresh_konzetsu_hub_visuals();
-    if (hub_content) {
-        const bool unlocked = konzetsu_all_daily_tasks_complete(konzetsu_tasks);
-        if (auto *sixth_hit = Object::cast_to<BaseButton>(hub_content->get_node_or_null("HubNode6Hit")))
-            sixth_hit->set_disabled(!unlocked);
-        if (Control *lock = Object::cast_to<Control>(hub_content->get_node_or_null("HubNode6Locked")))
-            lock->set_visible(!unlocked);
-    }
     if (konzetsu_dialog && konzetsu_dialog->is_visible()) close_konzetsu_challenge();
 }
 
